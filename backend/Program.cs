@@ -1,18 +1,20 @@
-// Program.cs — MinGram API
-// ASP.NET Core Minimal API: endpoints definieras direkt här, inga controllers.
-//
-// Starta lokalt:  dotnet run
-// Swagger UI:     https://localhost:{port}/swagger
-//
-// v35 — Azure-konfiguration (görs i portalen, inte i koden):
-// 1. CORS: App Service → API → CORS → lägg till din frontend-URL
-// 2. Easy Auth: App Service → Authentication → Add identity provider → Microsoft
-//    Välj din Entra ID-tenant. Alla anrop kräver nu inloggning.
-// 3. App-roller i Entra ID: gå till App registrations → din app → App roles
-//    Skapa rollerna Betraktare, Fotograf, Admin.
-//    Tilldela dem till dina Entra ID-användare under Enterprise applications.
-//
-// Bilder lagras som URL:er — ladda upp till Azure Blob Storage och skicka URL:en hit.
+/*
+Program.cs — MinGram API
+ASP.NET Core Minimal API: endpoints definieras direkt här, inga controllers.
+
+Starta lokalt:  dotnet run
+Swagger UI:     https://localhost:{port}/swagger
+
+v35 — Azure-konfiguration (görs i portalen, inte i koden):
+1. CORS: App Service → API → CORS → lägg till din frontend-URL
+2. Easy Auth: App Service → Authentication → Add identity provider → Microsoft
+   Välj din Entra ID-tenant. Alla anrop kräver nu inloggning.
+3. App-roller i Entra ID: gå till App registrations → din app → App roles
+   Skapa rollerna Betraktare, Fotograf, Admin.
+   Tilldela dem till dina Entra ID-användare under Enterprise applications.
+
+Bilder lagras som URL:er — ladda upp till Azure Blob Storage och skicka URL:en hit.
+*/
 
 using System.Text;
 using System.Text.Json;
@@ -22,9 +24,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// CORS — hanteras primärt i Azure Portal: App Service → API → CORS
-// Lägg till din frontend-URL där, så slipper du ändra och redeploya koden.
-// Den här koden hanterar CORS lokalt under utveckling.
+/*
+CORS — hanteras primärt i Azure Portal: App Service → API → CORS
+Lägg till din frontend-URL där, så slipper du ändra och redeploya koden.
+Den här koden hanterar CORS lokalt under utveckling.
+*/
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("MinGramPolicy", policy =>
@@ -44,10 +48,12 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors("MinGramPolicy");
 
-// -------------------------------------------------------
-// In-memory datastore med seed-data
-// Datan nollställs vid omstart — en riktig app lagrar bilder i Blob Storage
-// -------------------------------------------------------
+/* 
+-------------------------------------------------------
+In-memory datastore med seed-data
+Datan nollställs vid omstart — en riktig app lagrar bilder i Blob Storage
+------------------------------------------------------- 
+*/
 
 var bilder = new List<Bild>
 {
@@ -56,9 +62,11 @@ var bilder = new List<Bild>
 };
 var nastaBildId = 2;
 
-// ======================================================
-// Bilder
-// ======================================================
+/*
+======================================================
+Bilder
+====================================================== 
+*/
 
 // Alla roller får se bilder
 app.MapGet("/bilder", () => bilder)
@@ -73,8 +81,10 @@ app.MapGet("/bilder/{id:int}", (int id) =>
 .WithName("HamtaBild")
 .WithSummary("Hämta en specifik bild — alla roller");
 
-// Fotograf och Admin får ladda upp bilder
-// Skicka URL:en till bilden — lagra filen i Azure Blob Storage och använd den URL:en här
+/* 
+Fotograf och Admin får ladda upp bilder
+Skicka URL:en till bilden — lagra filen i Azure Blob Storage och använd den URL:en här 
+*/
 app.MapPost("/bilder", (NyBild ny, HttpRequest req) =>
 {
     if (!HarBehorighet(HamtaRoll(req), "Fotograf")) return Results.StatusCode(403);
@@ -94,7 +104,7 @@ app.MapPut("/bilder/{id:int}", (int id, BildUpdate update, HttpRequest req) =>
     bilder[index] = bilder[index] with
     {
         Caption = update.Caption ?? bilder[index].Caption,
-        Taggar  = update.Taggar  ?? bilder[index].Taggar
+        Taggar = update.Taggar ?? bilder[index].Taggar
     };
     return Results.Ok(bilder[index]);
 })
@@ -115,12 +125,14 @@ app.MapDelete("/bilder/{id:int}", (int id, HttpRequest req) =>
 
 app.Run();
 
-// ======================================================
-// Rollkontroll
-// ======================================================
+/* 
+======================================================
+Rollkontroll
+======================================================
 
-// Läser rollen ur Easy Auth-headern som Azure injicerar efter inloggning.
-// Lokalt (utan Easy Auth): returnerar "Admin" så Swagger fungerar utan inloggning.
+Läser rollen ur Easy Auth-headern som Azure injicerar efter inloggning.
+Lokalt (utan Easy Auth): returnerar "Admin" så Swagger fungerar utan inloggning. 
+*/
 string HamtaRoll(HttpRequest request)
 {
     var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
@@ -141,20 +153,22 @@ string HamtaRoll(HttpRequest request)
     return "Betraktare"; // okänd roll → minsta behörighet
 }
 
-// Kontrollerar om en roll har tillräcklig behörighet.
-// Hierarki: Betraktare < Fotograf < Admin
+/*Kontrollerar om en roll har tillräcklig behörighet.
+Hierarki: Betraktare < Fotograf < Admin
+*/
 bool HarBehorighet(string roll, string kravRoll) => (roll, kravRoll) switch
 {
-    (_, "Betraktare")          => true,
+    (_, "Betraktare") => true,
     ("Fotograf" or "Admin", "Fotograf") => true,
-    ("Admin", "Admin")         => true,
-    _                          => false
+    ("Admin", "Admin") => true,
+    _ => false
 };
 
-// ======================================================
-// Datamodeller
-// ======================================================
-
+/* 
+======================================================
+Datamodeller
+======================================================
+*/
 record Bild(int Id, string Namn, string Caption, List<string> Taggar, string Url);
 
 record NyBild(string Namn, string Caption, List<string>? Taggar, string Url);
