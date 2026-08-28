@@ -345,50 +345,25 @@ printf '\n'
 # 9. Deploy with GitHub
 # ============================================================
 
-# az webapp deployment github-actions add \
-#   --repo ztipsamme/minigram-emma \
-#   --branch main \
-#   --resource-group $RG \
-#   --name $API_NAME \
-#   --runtime "DOTNETCORE:10.0" \
-#   --login-with-github
-
-# az webapp deployment github-actions add \
-#   --repo ztipsamme/minigram-emma \
-#   --branch main \
-#   --resource-group $RG \
-#   --name $APP_NAME \
-#   --runtime "DOTNETCORE:10.0" \
-#   --login-with-github
-
-# az webapp deployment list-publishing-profiles \
-#   --resource-group $RG \
-#   --name $API_NAME \
-#   --output xml > publishProfile.xml
-
-print 'Skapar GitHub Actions Workflow med filer för respective directory.'
+printf 'Skapar GitHub Actions Workflow med filer för respective directory.'
 mkdir -p .github/workflows
 
 touch .github/workflows/deploy-backend.yml
 touch .github/workflows/deploy-frontend.yml
 
+printf 'Skapar service principal'
+az ad sp create-for-rbac \
+  --name "github-minigram-emma" \
+  --role contributor \
+  --scopes "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RG" \
+  --json-auth
 
-print 'Skapar secrets för backend'
-gh secret set AZURE_WEBAPP_API_NAME --body "$API_NAME"
-az webapp deployment list-publishing-profiles \
-  --resource-group "$RG" \
-  --name "$API_NAME" \
-  --xml |
-gh secret set AZURE_WEBAPP_API_PUBLISH_PROFILE
-
-
-print 'Skapar secrets för frontend'
-gh secret set AZURE_WEBAPP_APP_NAME --body "$APP_NAME"
-az webapp deployment list-publishing-profiles \
-  --resource-group "$RG" \
-  --name "$APP_NAME" \
-  --xml |
-gh secret set AZURE_WEBAPP_APP_PUBLISH_PROFILE
+az ad sp create-for-rbac \
+  --name "github-minigram-emma" \
+  --role contributor \
+  --scopes "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RG" \
+  --json-auth |
+gh secret set AZURE_CREDENTIALS
 
 # ============================================================
 # Sammanfattning
