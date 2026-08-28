@@ -136,19 +136,36 @@ Lokalt (utan Easy Auth): returnerar "Admin" så Swagger fungerar utan inloggning
 string HamtaRoll(HttpRequest request)
 {
     var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
-    if (string.IsNullOrEmpty(header)) return "Admin"; // lokal dev
+
+    if (string.IsNullOrEmpty(header))
+    {
+        if (app.Environment.IsDevelopment())
+        {
+            return "Admin";
+        }
+
+        return "Betraktare";
+    }
 
     try
     {
         var json = Encoding.UTF8.GetString(Convert.FromBase64String(header));
         using var doc = JsonDocument.Parse(json);
-        foreach (var claim in doc.RootElement.GetProperty("claims").EnumerateArray())
+
+        var claims = doc.RootElement.GetProperty("claims").EnumerateArray();
+
+        foreach (var claim in claims)
         {
             if (claim.GetProperty("typ").GetString() == "roles")
-                return claim.GetProperty("val").GetString() ?? "Betraktare";
+                return claim
+                            .GetProperty("val")
+                            .GetString() ?? "Betraktare";
         }
     }
-    catch { }
+    catch
+    {
+        return "Betraktare";
+    }
 
     return "Betraktare"; // okänd roll → minsta behörighet
 }
