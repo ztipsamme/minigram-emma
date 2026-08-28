@@ -36,4 +36,4 @@ jobs:
         app-name: 'minigram-api-emma'
         slot-name: 'production'
         publish-profile: ${{ secrets.AzureAppService_PublishProfile_b0965ffbd59047b881141b7d71e10a12 }}
-        package: ${{env.DOTNET_ROOT}}/myapp 
+        package: ./publish
