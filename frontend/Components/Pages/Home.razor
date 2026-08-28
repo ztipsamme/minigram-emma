@@ -1,0 +1,213 @@
+@* Home.razor — startsidan för MinGram
+   En Blazor-komponent: HTML, C# och CSS i samma fil.
+
+   Ny på Blazor? Läs igenom introduktionen först:
+   → 35_natverk_sakerhet/notes/blazor_intro.md
+
+   Din uppgift är att implementera de metoder som är markerade med TODO.
+   Strukturen är klar — du fyller i HTTP-anropen mot ditt eget API. *@
+
+@page "/"
+@inject IHttpClientFactory HttpClientFactory
+@inject ILogger<Home> Logger
+
+@* InteractiveServer = C#-koden körs på servern, UI uppdateras via WebSocket (SignalR).
+   React-jämförelse: det finns ingen direkt motsvarighet — närmast är Next.js Server Components,
+   men Blazor håller en live-anslutning öppen till servern istället för att rendera en gång. *@
+@rendermode InteractiveServer
+
+<h2>Bilder</h2>
+
+@if (laddar)
+{
+    <p>Hämtar bilder...</p>
+}
+else if (bilder.Count == 0)
+{
+    <p>Inga bilder ännu. Ladda upp den första!</p>
+}
+else
+{
+    <div class="bildgalleri">
+        @* @foreach loopar och renderar ett element per item — som .map() i React/JSX *@
+        @foreach (var bild in bilder)
+        {
+            <div class="bildkort">
+                <img src="@bild.TidsbegransadUrl" alt="@bild.Caption" />
+                <div class="bildinfo">
+                    <p class="caption">@bild.Caption</p>
+                    <p class="taggar">
+                        @string.Join(" · ", bild.Taggar.Select(t => $"#{t}"))
+                    </p>
+                    @* @onclick = onClick i React. Lambda med () => gör att vi kan skicka med argument. *@
+                    <button class="raderaknapp" @onclick="() => RaderaBild(bild.Namn)">
+                        Ta bort
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<hr />
+
+<h2>Ladda upp bild</h2>
+
+<div class="uppladdningsformular">
+    <div class="falt">
+        <label>Bild</label>
+        @* InputFile är Blazors komponent för filuppladdning *@
+        <InputFile OnChange="FilVald" accept="image/*" />
+    </div>
+    <div class="falt">
+        <label>Caption</label>
+        @* @bind = controlled input i React: value={caption} onChange={e => setCaption(e.target.value)}
+           Blazor gör båda riktningarna automatiskt med ett enda @bind. *@
+        <input type="text" @bind="caption" placeholder="Beskriv bilden..." />
+    </div>
+    <div class="falt">
+        <label>Taggar (kommaseparerade)</label>
+        <input type="text" @bind="taggar" placeholder="semester, strand, sol" />
+    </div>
+    <button @onclick="LaddaUpp" disabled="@(valdFil == null)">
+        Ladda upp
+    </button>
+    @if (!string.IsNullOrEmpty(felmeddelande))
+    {
+        <p class="fel">@felmeddelande</p>
+    }
+</div>
+
+@code {
+    private List<Bild> bilder    = new();
+    private bool       laddar    = true;
+    private string     caption   = "";
+    private string     taggar    = "";
+    private IBrowserFile? valdFil;
+    private string     felmeddelande = "";
+
+    // OnInitializedAsync = useEffect(() => { fetchData() }, []) i React
+    // Körs en gång när komponenten mountas. Asynkron, så du kan awaita direkt.
+    protected override async Task OnInitializedAsync()
+    {
+        await HamtaBilder();
+    }
+
+    private async Task HamtaBilder()
+    {
+        laddar = true;
+
+        // TODO: Anropa GET /bilder på ditt API och fyll listan `bilder`
+        // Tips: HttpClientFactory.CreateClient("MinGramApi") ger dig en konfigurerad HttpClient
+        // Tips: GetFromJsonAsync<List<Bild>>("/bilder") deserialiserar JSON åt dig automatiskt
+        await Task.CompletedTask; // ta bort den här raden när du lägger in ditt API-anrop
+
+        // DEMO: en exempelbild så du ser hur galleriet renderas.
+        // När du implementerar GET /bilder ovan ersätts det här av riktiga bilder från API:t.
+        bilder =
+        [
+            new(
+                Namn:            "demo.jpg",
+                Caption:         "Demobild — implementera GET /bilder för att hämta riktiga",
+                Taggar:          ["demo", "placeholder"],
+                TidsbegransadUrl: "https://placehold.co/400x300?text=MinGram+Demo"
+            )
+        ];
+
+        laddar = false;
+    }
+
+    private void FilVald(InputFileChangeEventArgs e)
+    {
+        // InputFileChangeEventArgs innehåller den fil användaren valde
+        valdFil       = e.File;
+        felmeddelande = "";
+    }
+
+    private async Task LaddaUpp()
+    {
+        if (valdFil == null) return;
+
+        // TODO: Skicka bilden till POST /bilder på ditt API
+        // Tips: MultipartFormDataContent används för att skicka filer via HTTP
+        // Tips: valdFil.OpenReadStream() ger dig filströmmen
+        // Tips: Anropa HamtaBilder() efteråt så uppdateras galleriet
+
+        felmeddelande = "⚠️ Metoden är inte implementerad än — implementera POST /bilder";
+    }
+
+    private async Task RaderaBild(string namn)
+    {
+        // TODO: Anropa DELETE /bilder/{namn} på ditt API
+        // Tips: Anropa HamtaBilder() efteråt så försvinner bilden från listan
+
+        felmeddelande = "⚠️ Metoden är inte implementerad än — implementera DELETE /bilder/{namn}";
+    }
+
+    // Datamodell som matchar JSON-svaret från MinGram-API:t
+    private record Bild(
+        string Namn,
+        string Caption,
+        List<string> Taggar,
+        string TidsbegransadUrl
+    );
+}
+
+<style>
+    h2 { margin: 1.5rem 0 1rem; font-size: 1.2rem; color: #555; text-transform: uppercase; letter-spacing: 1px; }
+    hr { border: none; border-top: 1px solid #eee; margin: 2rem 0; }
+
+    .bildgalleri {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+
+    .bildkort {
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+
+    .bildkort img {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        display: block;
+    }
+
+    .bildinfo   { padding: 0.75rem; }
+    .caption    { font-weight: 600; margin-bottom: 0.25rem; }
+    .taggar     { font-size: 0.8rem; color: #3897f0; margin-bottom: 0.5rem; }
+
+    .raderaknapp {
+        background: none;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        padding: 0.3rem 0.75rem;
+        cursor: pointer;
+        color: #e53935;
+        font-size: 0.8rem;
+    }
+
+    .raderaknapp:hover { background: #ffeaea; }
+
+    .uppladdningsformular { max-width: 500px; }
+    .falt         { margin-bottom: 1rem; }
+    .falt label   { display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.9rem; }
+    .falt input   { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #dbdbdb; border-radius: 4px; font-size: 1rem; }
+
+    .uppladdningsformular button {
+        background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
+        color: white;
+        border: none;
+        padding: 0.6rem 1.5rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+
+    button[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .fel { color: #e53935; margin-top: 0.5rem; font-size: 0.9rem; }
+</style>
