@@ -1,29 +1,32 @@
 ## 1. Skapa Infrastruktur
 
 ```bash
-RESOURCE_GROUP="RG-Oskar-Kotlinski-fbed43-DotNetCloudDeveloper-VT-Mars-Goteborg"
-APP_PLAN_NAME="minigram-maritiman"
-WEB_APP_NAME="minigram-api-maritiman"
-VNET_NAME="minigram-vnet"
+TEAM="emma"
+PROJECT_NAME="minigram"
+RG="RG-Emma-Spitz-a59389-DotNetCloudDeveloper-VT-Mars-Goteborg"
+APP_PLAN_NAME="$PROJECT_NAME-plan-$TEAM"
+WEB_APP_NAME="$PROJECT_NAME-api-$TEAM" #backend
+VNET="$PROJECT_NAME-vnet-$TEAM"
 
 # App Service plan (Linux, billigaste tier räcker: B1 eller F1 om tillgängligt)
 az appservice plan create \
-    --name plan-minigram \
+    --name $APP_PLAN_NAME \
     --resource-group $RESOURCE_GROUP \
     --sku B1 \
     --is-linux
 
 # Web App
-az webapp create --name $WEB_APP_NAME --resource-group $RESOURCE_GROUP \
---plan $APP_PLAN_NAME --runtime "DOTNETCORE:10.0"
+az webapp create --name $WEB_APP_NAME \
+    --resource-group $RESOURCE_GROUP \
+    --plan $APP_PLAN_NAME \
+    --runtime "DOTNETCORE:10.0"
 
 # Deploy från lokal build (kör i mappen med .csproj)
-az webapp up --name $WEB_APP_NAME --resource-group $RESOURCE_GROUP
+az webapp up --name $WEB_APP_NAME \
+    --resource-group $RESOURCE_GROUP
 ```
 
 ## 2. Sätt upp VNet med subnät
-
-### 1. Skapa Vnet med subnät
 
 ```bash
 az network vnet create \
@@ -36,28 +39,56 @@ az network vnet subnet create \
     --vnet-name $VNET_NAME --address-prefix 10.0.2.0/24
 ```
 
+## 3. Skapa Storage Account and a container
+
+```bash
+STORAGE_NAME="storage-$PROJECT_NAME-$TEAM"
+STORAGE_CONTAINER_NAME="bilder"
+
+ az storage account create \
+      -n $STORAGE_NAME \
+      -g $RESOURCE_GROUP \
+      -l $REGION \
+      --allow-blob-public-access true \
+      --sku Standard_LRS
+
+STORAGE_KEY=$(az storage account keys list \
+    --account-name $STORAGE_NAME \
+    --query "[0].value" \
+    -o tsv)
+
+az storage container create \
+    --account-name $STORAGE_NAME \
+    -n $STORAGE_CONTAINER_NAME \
+    --account-key $STORAGE_KEY \
+    --public-access blob \
+    2>/dev/null || true
+```
+
 ### 2. Sätt upp NSG för frontend
 
 ```bash
-az network nsg create --name nsg-frontend --resource-group $RESOURCE_GROUP
+NSG_FRONTEND="nsg-frontend-$TEAM"
+
+az network nsg create --name $NSG_FRONTEND --resource-group $RESOURCE_GROUP
 
 # Tillåt HTTPS in från internet
 az network nsg rule create \
-    --nsg-name nsg-frontend --resource-group $RESOURCE_GROUP \
+    --nsg-name $NSG_FRONTEND --resource-group $RESOURCE_GROUP \
     --name Allow-HTTPS-In --priority 100 \
     --direction Inbound --access Allow --protocol Tcp \
     --source-address-prefixes Internet --destination-port-ranges 443
 
 # Blockera HTTP explicit (lägre prioritetsnummer = körs innan default-regeln, men vi vill vara explicita)
 az network nsg rule create \
-    --nsg-name nsg-frontend --resource-group $RESOURCE_GROUP \
+    --nsg-name $NSG_FRONTEND --resource-group $RESOURCE_GROUP \
     --name Deny-HTTP-In --priority 110 \
     --direction Inbound --access Deny --protocol Tcp \
     --source-address-prefixes Internet --destination-port-ranges 80
 
 # Tillåt trafik mellan subnets (frontend <-> backend)
 az network nsg rule create \
-    --nsg-name nsg-frontend --resource-group $RESOURCE_GROUP \
+    --nsg-name $NSG_FRONTEND --resource-group $RESOURCE_GROUP \
     --name Allow-Backend-VNet --priority 120 \
     --direction Inbound --access Allow --protocol '*' \
     --source-address-prefixes 10.0.2.0/24 --destination-port-ranges '*'
@@ -65,17 +96,19 @@ az network nsg rule create \
 # Koppla NSG till subnet
 az network vnet subnet update \
     --name frontend-subnet --resource-group $RESOURCE_GROUP \
-    --vnet-name $VNET_NAME --network-security-group nsg-frontend
+    --vnet-name $VNET_NAME --network-security-group $NSG_FRONTEND
 ```
 
 ### 3. Sätt upp NSG för backend
 
 ```bash
-az network nsg create --name nsg-backend --resource-group $RESOURCE_GROUP
+NSG_BACKEND="nsg-backend-$TEAM"
+
+az network nsg create --name $NSG_BACKEND --resource-group $RESOURCE_GROUP
 
 # Tillåt bara trafik från frontend-subnet
 az network nsg rule create \
-    --nsg-name nsg-backend --resource-group $RESOURCE_GROUP \
+    --nsg-name $NSG_BACKEND --resource-group $RESOURCE_GROUP \
     --name Allow-Frontend-VNet --priority 100 \
     --direction Inbound --access Allow --protocol '*' \
     --source-address-prefixes 10.0.1.0/24 --destination-port-ranges '*'
@@ -83,7 +116,7 @@ az network nsg rule create \
 # Koppla NSG till subnet
 az network vnet subnet update \
     --name backend-subnet --resource-group $RESOURCE_GROUP \
-    --vnet-name $VNET_NAME --network-security-group nsg-backend
+    --vnet-name $VNET_NAME --network-security-group $NSG_BACKEND
 ```
 
 ### 4. Sätt Webbappen till HTTPS-Only
@@ -105,10 +138,6 @@ az webapp vnet-integration add \
   --vnet $VNET_NAME --subnet frontend-subnet
 ```
 
-### 6. Koppla Storage Account till backend subnet
-
-#### 1. Skapa Storage Account
-
 #### 2. Koppla Storage Account mot en private endpoint.
 
 ```bash
@@ -118,5 +147,3 @@ az network private-endpoint create \
   --private-connection-resource-id <storage-account-resource-id> \
   --group-id blob --connection-name pe-storage-connection
 ```
-
-/
