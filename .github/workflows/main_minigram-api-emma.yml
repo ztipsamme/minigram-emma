@@ -21,11 +21,14 @@ jobs:
       with:
         dotnet-version: '10.x'
 
-    - name: Build with dotnet
-      run: dotnet build ./backend/MinGramApi.csproj --configuration Release
-    
-    - name: dotnet publish
-      run: dotnet publish ./backend/MinGramApi.csproj -c Release -o ${{env.DOTNET_ROOT}}/myapp 
+    - name: Restore
+      run: dotnet restore ./starter-mingram-api/MinGramApi.csproj
+
+    - name: Build
+      run: dotnet build ./starter-mingram-api/MinGramApi.csproj --configuration Release --no-restore
+
+    - name: Publish
+      run: dotnet publish ./starter-mingram-api/MinGramApi.csproj --configuration Release --output ./publish --no-build
 
     - name: Deploy to Azure Web App
       uses: azure/webapps-deploy@v2
