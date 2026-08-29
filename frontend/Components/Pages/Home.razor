@@ -1,91 +1,156 @@
 @page "/"
 @inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
 @inject ILogger<Home> Logger
 @rendermode InteractiveServer
+@using System.Net.Http.Headers
+@using System.Text.Json.Serialization
 
 @*
-  Frontend körs i frontend-subnet (VNet integration = utgående trafik).
-  Anrop till API går till den publika API-URL:en (HTTPS).
-  API pratar med Storage via backend-subnet.
+  Frontend → API: publika HTTPS-URL:en + Bearer från Easy Auth (/.auth/me).
+  API → Storage: via backend-subnet.
 *@
 
-<h2>Bilder</h2>
-
-@if (laddar)
+@if (!authChecked)
 {
-    <p>Hämtar bilder...</p>
+    <p>Kollar inloggning...</p>
 }
-else if (!string.IsNullOrEmpty(felmeddelande) && bilder.Count == 0)
+else if (!loggedIn)
 {
-    <p class="fel">@felmeddelande</p>
-}
-else if (bilder.Count == 0)
-{
-    <p>Inga bilder ännu. Ladda upp den första!</p>
+    <p>Du måste logga in för att använda MinGram.</p>
+    <p><a href="/.auth/login/aad?post_login_redirect_uri=/">Logga in med Microsoft</a></p>
 }
 else
 {
-    <div class="bildgalleri">
-        @foreach (var bild in bilder)
-        {
-            <div class="bildkort">
-                <img src="@bild.Url" alt="@bild.Caption" />
-                <div class="bildinfo">
-                    <p class="caption">@bild.Caption</p>
-                    <p class="taggar">
-                        @string.Join(" · ", bild.Taggar.Select(t => $"#{t}"))
-                    </p>
-                    <button class="raderaknapp" @onclick="() => RaderaBild(bild.Id)">
-                        Ta bort
-                    </button>
+    <p class="inloggad">Inloggad som @currentUser</p>
+
+    <h2>Bilder</h2>
+
+    @if (laddar)
+    {
+        <p>Hämtar bilder...</p>
+    }
+    else if (!string.IsNullOrEmpty(felmeddelande) && bilder.Count == 0)
+    {
+        <p class="fel">@felmeddelande</p>
+    }
+    else if (bilder.Count == 0)
+    {
+        <p>Inga bilder ännu. Ladda upp den första!</p>
+    }
+    else
+    {
+        <div class="bildgalleri">
+            @foreach (var bild in bilder)
+            {
+                <div class="bildkort">
+                    <img src="@bild.Url" alt="@bild.Caption" />
+                    <div class="bildinfo">
+                        <p class="caption">@bild.Caption</p>
+                        <p class="taggar">
+                            @string.Join(" · ", bild.Taggar.Select(t => $"#{t}"))
+                        </p>
+                        <button class="raderaknapp" @onclick="() => RaderaBild(bild.Id)">
+                            Ta bort
+                        </button>
+                    </div>
                 </div>
-            </div>
+            }
+        </div>
+    }
+
+    <hr />
+
+    <h2>Ladda upp bild</h2>
+
+    <div class="uppladdningsformular">
+        <div class="falt">
+            <label>Bild</label>
+            <InputFile OnChange="FilVald" accept="image/*" />
+        </div>
+        <div class="falt">
+            <label>Caption</label>
+            <input type="text" @bind="caption" placeholder="Beskriv bilden..." />
+        </div>
+        <div class="falt">
+            <label>Taggar (kommaseparerade)</label>
+            <input type="text" @bind="taggar" placeholder="semester, strand, sol" />
+        </div>
+        <button @onclick="LaddaUpp" disabled="@(valdFil == null || laddarUpp)">
+            @(laddarUpp ? "Laddar upp..." : "Ladda upp")
+        </button>
+        @if (!string.IsNullOrEmpty(felmeddelande))
+        {
+            <p class="fel">@felmeddelande</p>
         }
     </div>
 }
 
-<hr />
-
-<h2>Ladda upp bild</h2>
-
-<div class="uppladdningsformular">
-    <div class="falt">
-        <label>Bild</label>
-        <InputFile OnChange="FilVald" accept="image/*" />
-    </div>
-    <div class="falt">
-        <label>Caption</label>
-        <input type="text" @bind="caption" placeholder="Beskriv bilden..." />
-    </div>
-    <div class="falt">
-        <label>Taggar (kommaseparerade)</label>
-        <input type="text" @bind="taggar" placeholder="semester, strand, sol" />
-    </div>
-    <button @onclick="LaddaUpp" disabled="@(valdFil == null || laddarUpp)">
-        @(laddarUpp ? "Laddar upp..." : "Ladda upp")
-    </button>
-    @if (!string.IsNullOrEmpty(felmeddelande))
-    {
-        <p class="fel">@felmeddelande</p>
-    }
-</div>
-
 @code {
     private List<Bild> bilder = new();
-    private bool laddar = true;
+    private bool laddar = false;
     private bool laddarUpp = false;
     private string caption = "";
     private string taggar = "";
     private IBrowserFile? valdFil;
     private string felmeddelande = "";
+    private string? accessToken;
+    private bool loggedIn;
+    private string currentUser = "";
+    private bool authChecked;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await HamtaBilder();
+        if (!firstRender) return;
+
+        await KontrolleraInloggning();
+        authChecked = true;
+
+        if (loggedIn)
+            await HamtaBilder();
+
+        StateHasChanged();
     }
 
     private HttpClient SkapaKlient()
-        => HttpClientFactory.CreateClient("MinGramApi");
+    {
+        var client = HttpClientFactory.CreateClient("MinGramApi");
+        client.DefaultRequestHeaders.Authorization = null;
+        if (!string.IsNullOrWhiteSpace(accessToken))
+        {
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", accessToken);
+        }
+        return client;
+    }
+
+    private async Task KontrolleraInloggning()
+    {
+        try
+        {
+            var users = await JS.InvokeAsync<List<AuthUser>>("fetchAuthUser");
+            var user = users?.FirstOrDefault();
+
+            if (string.IsNullOrWhiteSpace(user?.UserId))
+            {
+                loggedIn = false;
+                currentUser = "";
+                accessToken = null;
+                return;
+            }
+
+            loggedIn = true;
+            currentUser = user.UserDetails ?? user.UserId;
+            accessToken = user.AccessToken;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Kunde inte kontrollera inloggningen.");
+            loggedIn = false;
+            currentUser = "";
+            accessToken = null;
+        }
+    }
 
     private async Task HamtaBilder()
     {
@@ -94,8 +159,23 @@ else
 
         try
         {
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                felmeddelande = "Ingen access token — logga in igen.";
+                return;
+            }
+
             var client = SkapaKlient();
-            var svar = await client.GetFromJsonAsync<List<Bild>>("/bilder");
+            var response = await client.GetAsync("/bilder");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                felmeddelande = $"Kunde inte hämta bilder ({(int)response.StatusCode}).";
+                bilder = new();
+                return;
+            }
+
+            var svar = await response.Content.ReadFromJsonAsync<List<Bild>>();
             bilder = svar ?? new();
         }
         catch (Exception ex)
@@ -131,9 +211,9 @@ else
             var stream = valdFil.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
             var fileContent = new StreamContent(stream);
             fileContent.Headers.ContentType =
-                new System.Net.Http.Headers.MediaTypeHeaderValue(
+                new MediaTypeHeaderValue(
                     string.IsNullOrWhiteSpace(valdFil.ContentType)
-                        ? "application/octet-stream"
+                        ? "image/jpeg"
                         : valdFil.ContentType);
 
             content.Add(fileContent, "fil", valdFil.Name);
@@ -202,9 +282,28 @@ else
         List<string> Taggar,
         string Url
     );
+
+    private sealed class AuthUser
+    {
+        [JsonPropertyName("user_id")]
+        public string? UserId { get; set; }
+
+        [JsonPropertyName("user_claims")]
+        public List<object>? UserClaims { get; set; }
+
+        [JsonPropertyName("access_token")]
+        public string? AccessToken { get; set; }
+
+        [JsonPropertyName("provider_name")]
+        public string? ProviderName { get; set; }
+
+        [JsonPropertyName("user_details")]
+        public string? UserDetails { get; set; }
+    }
 }
 
 <style>
+    .inloggad { color: #555; font-size: 0.9rem; margin-bottom: 1rem; }
     h2 { margin: 1.5rem 0 1rem; font-size: 1.2rem; color: #555; text-transform: uppercase; letter-spacing: 1px; }
     hr { border: none; border-top: 1px solid #eee; margin: 2rem 0; }
 
