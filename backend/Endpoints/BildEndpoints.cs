@@ -106,7 +106,8 @@ public static class BildEndpoints
             NyBild ny,
             HttpRequest req) =>
         {
-            if (!RoleMapping.HarBehorighet(RoleMapping.HamtaRoll(req, isDev), "Fotograf") && !RoleMapping.HarBehorighet(RoleMapping.HamtaRoll(req, isDev), "Admin"))
+            var roll = RoleMapping.HamtaRoll(req, isDev);
+            if (!RoleMapping.HarBehorighet(roll, "Fotograf") && !RoleMapping.HarBehorighet(roll, "Admin"))
                 return Results.StatusCode(403);
 
             if (string.IsNullOrWhiteSpace(ny.Namn))
@@ -170,26 +171,37 @@ public static class BildEndpoints
         .WithName("LaddaUppBild")
         .WithSummary("Add an image — requires Photographer or Admin");
 
+        // Fotograf och Admin får uppdatera caption och taggar
         app.MapPut("/bilder/{id:int}", async (
             int id,
             BildUpdate update,
             HttpRequest req) =>
         {
-            if (!RoleMapping.HarBehorighet(RoleMapping.HamtaRoll(req, isDev), "Fotograf") && !RoleMapping.HarBehorighet(RoleMapping.HamtaRoll(req, isDev), "Admin"))
+            if (!RoleMapping.HarBehorighet(
+                    RoleMapping.HamtaRoll(req, isDev),
+                    "Fotograf"))
+            {
                 return Results.StatusCode(403);
+            }
 
-            var blobClient = await imageStorageService.FindImageBlob(id);
+            var blobClient =
+                await imageStorageService.FindImageBlob(id);
 
             if (blobClient is null)
                 return Results.NotFound();
 
-            var properties = await blobClient.GetPropertiesAsync();
-            var metadata = properties.Value.Metadata;
+            var properties =
+                await blobClient.GetPropertiesAsync();
+
+            var metadata =
+                properties.Value.Metadata;
 
             var caption =
                 update.Caption
                 ?? (
-                    metadata.TryGetValue("caption", out var existingCaption)
+                    metadata.TryGetValue(
+                        "caption",
+                        out var existingCaption)
                         ? existingCaption
                         : ""
                 );
@@ -200,9 +212,14 @@ public static class BildEndpoints
             {
                 tags = update.Taggar;
             }
-            else if (metadata.TryGetValue("tags", out var existingTags))
+            else if (
+                metadata.TryGetValue(
+                    "tags",
+                    out var existingTags))
             {
-                tags = JsonSerializer.Deserialize<List<string>>(existingTags) ?? [];
+                tags =
+                    JsonSerializer.Deserialize<List<string>>(
+                        existingTags) ?? [];
             }
             else
             {
@@ -210,12 +227,15 @@ public static class BildEndpoints
             }
 
             metadata["caption"] = caption;
-            metadata["tags"] = JsonSerializer.Serialize(tags);
+            metadata["tags"] =
+                JsonSerializer.Serialize(tags);
 
             await blobClient.SetMetadataAsync(metadata);
 
             var originalName =
-                metadata.TryGetValue("originalName", out var name)
+                metadata.TryGetValue(
+                    "originalName",
+                    out var name)
                     ? name
                     : blobClient.Name;
 
@@ -229,7 +249,8 @@ public static class BildEndpoints
             return Results.Ok(bild);
         })
         .WithName("UppdateraBild")
-        .WithSummary("Update image — requires Photographer or Admin");
+        .WithSummary(
+            "Update image — requires Photographer or Admin");
 
         app.MapDelete("/bilder/{id:int}", async (
             int id,
