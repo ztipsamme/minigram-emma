@@ -115,12 +115,19 @@ else
     private HttpClient SkapaKlient()
     {
         var client = HttpClientFactory.CreateClient("MinGramApi");
-        client.DefaultRequestHeaders.Authorization = null;
+        client.DefaultRequestHeaders.Remove("Authorization");
+        client.DefaultRequestHeaders.Remove("X-User-Email");
+
+        // Bearer om Easy Auth gav API-token; annars e-postheader (workaround utan Emma).
         if (!string.IsNullOrWhiteSpace(accessToken))
         {
             client.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", accessToken);
         }
+
+        if (!string.IsNullOrWhiteSpace(currentUser) && currentUser.Contains('@'))
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-User-Email", currentUser);
+
         return client;
     }
 
@@ -159,12 +166,6 @@ else
 
         try
         {
-            if (string.IsNullOrWhiteSpace(accessToken))
-            {
-                felmeddelande = "Ingen access token — logga in igen.";
-                return;
-            }
-
             var client = SkapaKlient();
             var response = await client.GetAsync("/bilder");
 

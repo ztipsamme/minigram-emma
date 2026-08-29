@@ -185,6 +185,12 @@ string SkapaLasbarUrl(BlobClient blob)
 
 string? HamtaEmail(HttpRequest request)
 {
+    // Workaround: frontend skickar e-post efter egen Easy Auth-login
+    // (när API:t kör AllowAnonymous / auth av).
+    var forwarded = request.Headers["X-User-Email"].FirstOrDefault();
+    if (!string.IsNullOrWhiteSpace(forwarded) && forwarded.Contains('@'))
+        return forwarded.Trim();
+
     var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
     if (string.IsNullOrEmpty(header)) return null;
 
@@ -225,37 +231,35 @@ string HamtaRoll(HttpRequest request)
 {
     var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
 
-    if (string.IsNullOrEmpty(header))
+    if (!string.IsNullOrEmpty(header))
     {
-        if (app.Environment.IsDevelopment())
-            return "Admin";
-
-        return "Betraktare";
-    }
-
-    try
-    {
-        var json = Encoding.UTF8.GetString(Convert.FromBase64String(header));
-        using var doc = JsonDocument.Parse(json);
-
-        foreach (var claim in doc.RootElement.GetProperty("claims").EnumerateArray())
+        try
         {
-            var typ = claim.TryGetProperty("typ", out var t1) ? t1.GetString()
-                    : claim.TryGetProperty("type", out var t2) ? t2.GetString()
-                    : null;
+            var json = Encoding.UTF8.GetString(Convert.FromBase64String(header));
+            using var doc = JsonDocument.Parse(json);
 
-            if (typ == "roles")
-                return claim.GetProperty("val").GetString() ?? "Betraktare";
+            foreach (var claim in doc.RootElement.GetProperty("claims").EnumerateArray())
+            {
+                var typ = claim.TryGetProperty("typ", out var t1) ? t1.GetString()
+                        : claim.TryGetProperty("type", out var t2) ? t2.GetString()
+                        : null;
+
+                if (typ == "roles")
+                    return claim.GetProperty("val").GetString() ?? "Betraktare";
+            }
         }
+        catch
+        {
+            // fall through till e-postmappning
+        }
+    }
 
-        var email = HamtaEmail(request);
-        if (email != null && rollMappning.TryGetValue(email, out var mappad))
-            return mappad;
-    }
-    catch
-    {
-        return "Betraktare";
-    }
+    var email = HamtaEmail(request);
+    if (email != null && rollMappning.TryGetValue(email, out var mappad))
+        return mappad;
+
+    if (string.IsNullOrEmpty(header) && app.Environment.IsDevelopment())
+        return "Admin";
 
     return "Betraktare";
 }
