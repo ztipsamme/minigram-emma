@@ -14,7 +14,7 @@ namespace backend.Services
 
         public ImageService(IConfiguration config, bool isDev)
         {
-            var accountURL = config["Storage:AccountURL"]!;
+            var accountURL = config["Storage:AccountUrl"]!;
             var containerName = config["Storage:Container"] ?? "bilder";
 
             var _serviceClient = new BlobServiceClient(
