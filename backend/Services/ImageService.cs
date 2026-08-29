@@ -17,7 +17,7 @@ namespace backend.Services
             var accountURL = config["Storage:AccountUrl"]!;
             var containerName = config["Storage:Container"] ?? "bilder";
 
-            var _serviceClient = new BlobServiceClient(
+            _serviceClient = new BlobServiceClient(
                 new Uri(accountURL),
                 new DefaultAzureCredential());
 
