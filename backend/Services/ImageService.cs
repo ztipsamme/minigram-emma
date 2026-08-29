@@ -2,14 +2,16 @@ using System.Net.Mime;
 using System.Text.Json;
 using Azure.Identity;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 
 namespace backend.Services
 {
     public class ImageService
     {
         private readonly BlobContainerClient _container;
+        private readonly bool _isDev;
 
-        public ImageService(IConfiguration config)
+        public ImageService(IConfiguration config, bool isDev)
         {
             var accountURL = config["Storage:AccountURL"]!;
             var containerName = config["Storage:Container"] ?? "bilder";
@@ -19,33 +21,62 @@ namespace backend.Services
                 new DefaultAzureCredential());
 
             _container = serviceClient.GetBlobContainerClient(containerName);
+            _isDev = isDev;
         }
 
-        public async Task<string> UploadAsync(string blobName, Stream content, string contentType)
+        public async Task<List<Image>> GetAllAsync()
         {
-            var blob = _container.GetBlobClient(blobName);
+            List<Image> res = new();
 
-            await blob.UploadAsync(content, new Azure.Storage.Blobs.Models.BlobHttpHeaders
+            await foreach (BlobItem blobItem in _container.GetBlobsAsync(BlobTraits.Metadata))
             {
-                ContentType = contentType
-            });
+                var metadata = blobItem.Metadata;
 
-            return blob.Name;
+                metadata.TryGetValue("Caption", out var caption);
+                metadata.TryGetValue("Tags", out var tagsRaw);
+
+                var tags = string.IsNullOrWhiteSpace(tagsRaw)
+                    ? new List<string>()
+                    : tagsRaw.Split(',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .ToList();
+
+                var blobClient = _container.GetBlobClient(blobItem.Name);
+
+                var sasUri = blobClient.GenerateSasUri(
+                    Azure.Storage.Sas.BlobSasPermissions.Read,
+                    DateTimeOffset.UtcNow.AddHours(1));
+
+                res.Add(new Image(
+                    Id: 1,
+                    Name: blobItem.Name,
+                    Caption: caption ?? string.Empty,
+                    Tags: tags,
+                    Url: sasUri.ToString()
+                ));
+            }
+
+            return res;
         }
 
-        public async Task<(Stream Content, string ContentType)?> DownloadAsync(string blobName)
+        public async Task<Image> GetByIdAsync(int id)
         {
-            var blob = _container.GetBlobClient(blobName);
-            if (!await blob.ExistsAsync()) return null;
-
-            var download = await blob.DownloadStreamingAsync();
-            return (download.Value.Content, download.Value.Details.ContentType);
+            throw new NotImplementedException();
         }
 
-        public async Task DeleteAsync(string blobName)
+        public async Task<Image> CreateImageAsync(NewImage newImage)
         {
-            await _container.GetBlobClient(blobName).DeleteIfExistsAsync();
+            throw new NotImplementedException();
         }
 
+        public async Task<Image> UpdateImageAsync(int id, ImageUpdate imageUpdate)
+        {
+            throw new NotImplementedException();
+        }
+
+        public async Task<bool> DeleteImageByIdAsync(int id)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

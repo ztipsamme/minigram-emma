@@ -3,17 +3,12 @@ using System.Text.Json;
 
 public static class RoleMapping
 {
-    public static string GetRole(HttpRequest request, bool isDevEnv)
+    public static string GetRole(HttpRequest request, bool isDev, string devTestRole)
     {
         var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
 
         if (string.IsNullOrEmpty(header))
-        {
-            if (isDevEnv)
-                return "Admin";
-
-            return "Betraktare";
-        }
+            return isDev ? (devTestRole ?? "") : "";
 
         try
         {

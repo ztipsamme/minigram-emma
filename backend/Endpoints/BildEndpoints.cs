@@ -7,79 +7,131 @@ public static class ImageEndpoints
 {
     public static void MapImageEndpoints(
         this WebApplication app,
-        bool isDev)
+        ImageService imageService,
+        bool isDev,
+        string? devTestRole = "")
     {
         var nextImage = 2;
 
-        app.MapPost("/bilder", async (IFormFile file, string caption, string? tags, ImageService imageService, HttpRequest req) =>
+        // Alla roller får se bilder
+        app.MapGet("/bilder", async () =>
         {
-            var role = RoleMapping.GetRole(req, isDev);
-            if (!RoleMapping.HasPermission(role, "Fotograf") && !RoleMapping.HasPermission(role, "Admin")) return Results.StatusCode(403);
+            if (isDev)
+                return Results.Ok(MockImages.Images);
 
-            var blobName = $"{Guid.NewGuid()}-{file.FileName}";
-            await using var stream = file.OpenReadStream();
-            await imageService.UploadAsync(blobName, stream, file.ContentType);
+            var images = await imageService.GetAllAsync();
 
-            var tagList = tags?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList() ?? [];
-
-            var b = new Image(nextImage++, file.FileName, caption, tagList, blobName);
-
-            MockImages.Images.Add(b);
-
-            return Results.Created($"/bilder/{b.Id}", b);
+            return Results.Ok(images);
         })
-        // .DisableAntiforgery() // om du testar via Swagger/Postman med form-data
+        .WithName("HamtaBilder")
+        .WithSummary("Hämta alla bilder — alla roller");
+
+
+        app.MapGet("/bilder/{id:int}", async (int id) =>
+        {
+            if (isDev)
+            {
+                var b = MockImages.Images.FirstOrDefault(b => b.Id == id);
+                return b is not null ? Results.Ok(b) : Results.NotFound();
+            }
+
+            var image = await imageService.GetByIdAsync(id);
+
+            return image is not null
+                ? Results.Ok(image)
+                : Results.NotFound();
+        })
+        .WithName("HamtaBild")
+        .WithSummary("Hämta en specifik bild — alla roller");
+
+
+        /* Fotograf och Admin får ladda upp bilder
+        Skicka URL:en till bilden — lagra filen i Azure Blob Storage och använd den URL:en här */
+        app.MapPost("/bilder", async (NewImage newImage, HttpRequest req) =>
+        {
+            var role = RoleMapping.GetRole(req, isDev, devTestRole ?? "");
+
+            if (!RoleMapping.HasPermission(role, "Fotograf") &&
+                !RoleMapping.HasPermission(role, "Admin"))
+                return Results.StatusCode(403);
+
+            if (isDev)
+            {
+                var b = new Image(nextImage++, newImage.Name, newImage.Caption, newImage.Tags ?? [], newImage.Url);
+                MockImages.Images.Add(b);
+                return Results.Created($"/bilder/{b.Id}", b);
+            }
+
+            var image = await imageService.CreateImageAsync(
+              newImage
+            );
+
+            return Results.Created($"/bilder/{image.Id}", image);
+        })
         .WithName("LaddaUppBild")
         .WithSummary("Lägg till bild — kräver Fotograf eller Admin");
 
-        app.MapGet("/bilder/{id:int}/bild", async (int id, ImageService imageService, HttpRequest req) =>
-        {
-            if (!RoleMapping.HasPermission(RoleMapping.GetRole(req, isDev), "Betraktare"))
-                return Results.StatusCode(403);
-
-            var b = MockImages.Images.FirstOrDefault(x => x.Id == id);
-            if (b is null) return Results.NotFound();
-
-            var result = await imageService.DownloadAsync(b.Url); // Url-fältet innehåller nu blob-namnet
-            if (result is null) return Results.NotFound();
-
-            return Results.Stream(result.Value.Content, result.Value.ContentType);
-        })
-        .WithName("HamtaBildInnehall");
-
 
         // Fotograf och Admin får uppdatera caption och taggar
-        app.MapPut("/bilder/{id:int}", (int id, ImageUpdate update, HttpRequest req) =>
+        app.MapPut("/bilder/{id:int}", async (int id, ImageUpdate imageUpdate, HttpRequest req) =>
         {
-            var role = RoleMapping.GetRole(req, isDev);
-            if (!RoleMapping.HasPermission(role, "Fotograf") && !RoleMapping.HasPermission(role, "Admin")) return Results.StatusCode(403);
+            var role = RoleMapping.GetRole(req, isDev, devTestRole ?? "");
 
-            var index = MockImages.Images.FindIndex(b => b.Id == id);
-            if (index < 0) return Results.NotFound();
-            MockImages.Images[index] = MockImages.Images[index] with
+            if (!RoleMapping.HasPermission(role, "Fotograf") &&
+                !RoleMapping.HasPermission(role, "Admin"))
+                return Results.StatusCode(403);
+
+            if (isDev)
             {
-                Caption = update.Caption ?? MockImages.Images[index].Caption,
-                Tags = update.Tags ?? MockImages.Images[index].Tags
-            };
-            return Results.Ok(MockImages.Images[index]);
+                var index = MockImages.Images.FindIndex(b => b.Id == id);
+                if (index < 0) return Results.NotFound();
+
+                var current = MockImages.Images[index];
+
+                var updatedImage = current with
+                {
+                    Caption = !string.IsNullOrWhiteSpace(imageUpdate.Caption)
+                        ? imageUpdate.Caption
+                        : current.Caption,
+
+                    Tags = imageUpdate.Tags is { Count: > 0 }
+                        ? imageUpdate.Tags
+                        : current.Tags
+                };
+
+                MockImages.Images[index] = updatedImage;
+                return Results.Ok(updatedImage);
+            }
+
+            var image = await imageService.UpdateImageAsync(id, imageUpdate);
+
+            return image is not null
+                ? Results.Ok(image)
+                : Results.NotFound();
         })
         .WithName("UppdateraBild")
         .WithSummary("Uppdatera bild — kräver Fotograf eller Admin");
 
-
-        // Bara Admin får ta bort bilder — testa med Postman som Betraktare för att se 403
-        app.MapDelete("/bilder/{id:int}", async (int id, ImageService imageService, HttpRequest req) =>
+        /* Bara Admin får ta bort bilder — testa med Postman som Betraktare för att se 403 */
+        app.MapDelete("/bilder/{id:int}", async (int id, HttpRequest req) =>
         {
-            if (!RoleMapping.HasPermission(RoleMapping.GetRole(req, isDev), "Admin"))
-                return Results.StatusCode(403);
+            if (!RoleMapping.HasPermission(RoleMapping.GetRole(req, isDev, devTestRole ?? ""), "Admin")) return Results.StatusCode(403);
 
-            var b = MockImages.Images.FirstOrDefault(x => x.Id == id);
-            if (b is null) return Results.NotFound();
+            if (isDev)
+            {
+                var b = MockImages.Images.FirstOrDefault(b => b.Id == id);
+                if (b is null) return Results.NotFound();
+                MockImages.Images.Remove(b);
+                return Results.NoContent();
+            }
 
-            await imageService.DeleteAsync(b.Url);
-            MockImages.Images.Remove(b);
-            return Results.NoContent();
+            var deleted = await imageService.DeleteImageByIdAsync(id);
+
+            return deleted
+                ? Results.NoContent()
+                : Results.NotFound();
         })
-        .WithName("RaderaBild");
+        .WithName("RaderaBild")
+        .WithSummary("Radera bild — kräver Admin");
     }
 }
