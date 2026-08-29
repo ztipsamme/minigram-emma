@@ -8,6 +8,7 @@ namespace backend.Services
 {
     public class ImageService
     {
+        private readonly BlobServiceClient _serviceClient;
         private readonly BlobContainerClient _container;
         private readonly bool _isDev;
 
@@ -16,17 +17,22 @@ namespace backend.Services
             var accountURL = config["Storage:AccountURL"]!;
             var containerName = config["Storage:Container"] ?? "bilder";
 
-            var serviceClient = new BlobServiceClient(
+            var _serviceClient = new BlobServiceClient(
                 new Uri(accountURL),
                 new DefaultAzureCredential());
 
-            _container = serviceClient.GetBlobContainerClient(containerName);
+            _container = _serviceClient.GetBlobContainerClient(containerName);
             _isDev = isDev;
         }
 
         public async Task<List<Image>> GetAllAsync()
         {
             List<Image> res = new();
+
+            var userDelegationKey = await _serviceClient
+                .GetUserDelegationKeyAsync(
+                    DateTimeOffset.UtcNow.AddMinutes(-5),
+                    DateTimeOffset.UtcNow.AddHours(1));
 
             await foreach (BlobItem blobItem in _container.GetBlobsAsync(BlobTraits.Metadata))
             {
@@ -43,9 +49,22 @@ namespace backend.Services
 
                 var blobClient = _container.GetBlobClient(blobItem.Name);
 
-                var sasUri = blobClient.GenerateSasUri(
-                    Azure.Storage.Sas.BlobSasPermissions.Read,
-                    DateTimeOffset.UtcNow.AddHours(1));
+                var sasBuilder = new Azure.Storage.Sas.BlobSasBuilder
+                {
+                    BlobContainerName = _container.Name,
+                    BlobName = blobItem.Name,
+                    Resource = "b",
+                    StartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
+                    ExpiresOn = DateTimeOffset.UtcNow.AddHours(1)
+                };
+                sasBuilder.SetPermissions(Azure.Storage.Sas.BlobSasPermissions.Read);
+
+                var sasToken = sasBuilder.ToSasQueryParameters(
+                    userDelegationKey,
+                    _container.AccountName
+                ).ToString();
+
+                var sasUri = $"{blobClient.Uri}?{sasToken}";
 
                 res.Add(new Image(
                     Id: 1,
