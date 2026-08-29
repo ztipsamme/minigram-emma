@@ -18,6 +18,15 @@ using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var storageAccountName = "stminigramemma";
+var containerName = "bilder";
+
+var blobServiceClient = new BlobServiceClient(
+    new Uri($"https://{storageAccountName}.blob.core.windows.net"),
+    new DefaultAzureCredential());
+
+var containerClient = blobServiceClient.GetBlobContainerClient(containerName);
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -75,13 +84,92 @@ app.MapGet("/bilder", () => bilder)
    .WithName("HamtaBilder")
    .WithSummary("Hämta alla bilder — alla roller");
 
-app.MapGet("/bilder/{id:int}", (int id) =>
+        return Results.Ok(bilder);
+    }
+    catch (Exception ex)
 {
-    var b = bilder.FirstOrDefault(b => b.Id == id);
-    return b is not null ? Results.Ok(b) : Results.NotFound();
+    Console.WriteLine(ex.ToString());
+
+    return Results.Problem(
+        statusCode: 500,
+        title: "Error accessing Blob Storage",
+        detail: ex.Message);
+
+    }
+})
+.WithName("HamtaBilder")
+.WithSummary("Get all images — all roles");
+
+
+// =======================================================
+// GET /bilder/{id}
+// =======================================================
+// All roles can read image metadata.
+// =======================================================
+
+app.MapGet("/bilder/{id:int}", async (int id) =>
+{
+    var blobClient = await FindImageBlob(id);
+
+    if (blobClient is null)
+        return Results.NotFound();
+
+    var properties = await blobClient.GetPropertiesAsync();
+    var metadata = properties.Value.Metadata;
+
+    var originalName =
+        metadata.TryGetValue("originalName", out var name)
+            ? name
+            : blobClient.Name;
+
+    var caption =
+        metadata.TryGetValue("caption", out var captionValue)
+            ? captionValue
+            : "";
+
+    var tags =
+        metadata.TryGetValue("tags", out var tagsValue)
+            ? JsonSerializer.Deserialize<List<string>>(tagsValue) ?? []
+            : [];
+
+    var bild = new Bild(
+        id,
+        originalName,
+        caption,
+        tags,
+        $"/bilder/{id}/image");
+
+    return Results.Ok(bild);
 })
 .WithName("HamtaBild")
-.WithSummary("Hämta en specifik bild — alla roller");
+.WithSummary("Get a specific image — all roles");
+
+// =======================================================
+// GET /bilder/{id}/image
+// =======================================================
+// All roles can retrieve the actual image.
+// The Blob remains private.
+// =======================================================
+
+app.MapGet("/bilder/{id:int}/image", async (int id) =>
+{
+    var blobClient = await FindImageBlob(id);
+
+    if (blobClient is null)
+        return Results.NotFound();
+
+    var response = await blobClient.DownloadStreamingAsync();
+
+    var contentType =
+        response.Value.Details.ContentType
+        ?? "application/octet-stream";
+
+    return Results.Stream(
+        response.Value.Content,
+        contentType);
+})
+.WithName("HamtaBildFil")
+.WithSummary("Get the actual image — all roles");
 
 app.MapGet("/bilder/{id:int}/fil", async (int id) =>
 {
@@ -177,18 +265,81 @@ app.MapPost("/bilder/uppladdning", async (
 
 app.MapPut("/bilder/{id:int}", (int id, BildUpdate update, HttpRequest req) =>
 {
-    if (!HarBehorighet(HamtaRoll(req), "Fotograf")) return Results.StatusCode(403);
-    var index = bilder.FindIndex(b => b.Id == id);
-    if (index < 0) return Results.NotFound();
-    bilder[index] = bilder[index] with
+    if (!HarBehorighet(
+            HamtaRoll(req),
+            "Fotograf"))
     {
-        Caption = update.Caption ?? bilder[index].Caption,
-        Taggar = update.Taggar ?? bilder[index].Taggar
-    };
-    return Results.Ok(bilder[index]);
+        return Results.StatusCode(403);
+    }
+
+    var blobClient =
+        await FindImageBlob(id);
+
+    if (blobClient is null)
+        return Results.NotFound();
+
+    var properties =
+        await blobClient.GetPropertiesAsync();
+
+    var metadata =
+        properties.Value.Metadata;
+
+    var caption =
+        update.Caption
+        ?? (
+            metadata.TryGetValue(
+                "caption",
+                out var existingCaption)
+                ? existingCaption
+                : ""
+        );
+
+    List<string> tags;
+
+    if (update.Taggar is not null)
+    {
+        tags = update.Taggar;
+    }
+    else if (
+        metadata.TryGetValue(
+            "tags",
+            out var existingTags))
+    {
+        tags =
+            JsonSerializer.Deserialize<List<string>>(
+                existingTags) ?? [];
+    }
+    else
+    {
+        tags = [];
+    }
+
+    metadata["caption"] = caption;
+    metadata["tags"] =
+        JsonSerializer.Serialize(tags);
+
+    await blobClient.SetMetadataAsync(metadata);
+
+    var originalName =
+        metadata.TryGetValue(
+            "originalName",
+            out var name)
+            ? name
+            : blobClient.Name;
+
+    var bild = new Bild(
+        id,
+        originalName,
+        caption,
+        tags,
+        $"/bilder/{id}/image");
+
+    return Results.Ok(bild);
 })
 .WithName("UppdateraBild")
-.WithSummary("Uppdatera bild — kräver Fotograf eller Admin");
+.WithSummary(
+    "Update image — requires Photographer or Admin");
+
 
 app.MapDelete("/bilder/{id:int}", async (int id, HttpRequest req) =>
 {
@@ -206,8 +357,8 @@ app.MapDelete("/bilder/{id:int}", async (int id, HttpRequest req) =>
     return Results.NoContent();
 })
 .WithName("RaderaBild")
-.WithSummary("Radera bild — kräver Admin");
-
+.WithSummary(
+    "Delete image — requires Admin");
 app.Run();
 
 string? HamtaEmail(HttpRequest request)
@@ -299,6 +450,10 @@ bool HarBehorighet(string roll, string kravRoll) => (roll, kravRoll) switch
     _ => false
 };
 
+Datamodeller
+*/
 record Bild(int Id, string Namn, string Caption, List<string> Taggar, string Url);
 record NyBild(string Namn, string Caption, List<string>? Taggar, string Url);
 record BildUpdate(string? Caption, List<string>? Taggar);
+
+
