@@ -240,6 +240,15 @@ az storage account update \
   --resource-group "$RG" \
   --default-action Deny
 
+MY_IP=$(curl -s https://api.ipify.org)
+
+printf "Tillåter lokal IP (%s) i Storage Account...\n" "$MY_IP"
+
+az storage account network-rule add \
+  --resource-group "$RG" \
+  --account-name "$STORAGE" \
+  --ip-address "$MY_IP"
+
 
 # ============================================================
 # 4. App Service Plan + Apps
@@ -324,6 +333,11 @@ az webapp config set \
   --name "$API_NAME" \
   --vnet-route-all-enabled true
 
+# Säkerställ Azure Services-åtkomst & DNS på Web App
+az webapp config appsettings set \
+  --resource-group "$RG" \
+  --name "$API_NAME" \
+  --settings WEBSITE_DNS_SERVER=168.63.129.16 WEBSITE_VNET_ROUTE_ALL=1
 
 # ============================================================
 # 7.  CORS
@@ -838,6 +852,32 @@ az role assignment create \
 echo "$API_PRINCIPAL_ID"
 
 
-# To do
-# Lägg till script för att till låt din egen IP-adress
-# i Storage Account så inte firewall:en stoppar
+# ============================================================
+# Problem: App Service Appsettings issue
+# ============================================================
+
+# Trodde det var en DNS skit som orsakade status 500 p.g.a storage account
+# Var förmodligen bara fel value i Storage__AccountUrl och Storage__Container
+
+echo $RG
+echo $API_NAME
+echo $STORAGE
+
+az webapp config appsettings set --resource-group $RG \
+  --name "$API_NAME" \
+  --settings WEBSITE_DNS_SERVER="8.8.8.8"
+
+
+az webapp config appsettings set \
+  --resource-group "$RG" \
+  --name "$API_NAME" \
+  --settings \
+    Storage__AccountUrl="https://${STORAGE}.blob.core.windows.net/" \
+    Storage__Container="$CONTAINER" \
+
+az webapp config appsettings list \
+  --resource-group "$RG" \
+  --name "$API_NAME" \
+  --output table
+
+az webapp restart --resource-group "$RG" --name "$API_NAME"
