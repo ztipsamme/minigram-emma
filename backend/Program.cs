@@ -108,7 +108,8 @@ app.MapGet("/bilder/{id:int}/fil", async (int id) =>
 
 app.MapPost("/bilder", (NyBild ny, HttpRequest req) =>
 {
-    if (!HarBehorighet(HamtaRoll(req), "Fotograf")) return Results.StatusCode(403);
+    if (!HarBehorighet(HamtaRoll(req), "Fotograf") || !HarBehorighet(HamtaRoll(req), "Admin")) return Results.StatusCode(403);
+
     var b = new Bild(nastaBildId++, ny.Namn, ny.Caption, ny.Taggar ?? [], ny.Url);
     bilder.Add(b);
     return Results.Created($"/bilder/{b.Id}", b);
