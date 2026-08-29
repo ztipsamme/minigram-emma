@@ -25,6 +25,31 @@ CONTAINER="bilder"
 FRONTEND_URL="https://${APP_NAME}.azurewebsites.net"
 API_URL="https://${API_NAME}.azurewebsites.net"
 
+# ------------------------------------------------------------
+# Användare per roll
+#
+# Lägg till hur många användare du vill.
+# Exempel:
+#
+# ADMIN_USERS=(
+#   "emma.spitz@IThogskolan.onmicrosoft.com"
+#   "annan.admin@IThogskolan.onmicrosoft.com"
+# )
+# ------------------------------------------------------------
+
+ADMIN_USERS=(
+  "emma.spitz@IThogskolan.onmicrosoft.com"
+)
+
+FOTOGRAF_USERS=(
+  # "fotograf1@IThogskolan.onmicrosoft.com"
+  # "fotograf2@IThogskolan.onmicrosoft.com"
+)
+
+BETRAKTARE_USERS=(
+  # "betraktare1@IThogskolan.onmicrosoft.com"
+  # "betraktare2@IThogskolan.onmicrosoft.com"
+)
 
 # ============================================================
 # 1. VNet + subnets
@@ -342,8 +367,10 @@ printf '\n'
 
 
 # ============================================================
-# 9. Deploy with GitHub
+# 9. Deploy with GitHub Actions
 # ============================================================
+
+printf '\n9. Deploy with GitHub Actions \n'
 
 printf 'Skapar GitHub Actions Workflow med filer för respective directory.'
 mkdir -p .github/workflows
@@ -366,6 +393,196 @@ az ad sp create-for-rbac \
 gh secret set AZURE_CREDENTIALS
 
 # ============================================================
+# 10. Users
+# ============================================================
+
+# Om man vill kan man skapa nya users/tenants med nedanstående
+# kod, men vi valde att sätta rollerna på våra egna konton.
+
+# TENANT_DOMAIN="IThogskolan.onmicrosoft.com"
+# PASSWORD="MittHemligaLösenord123!"
+
+# az ad user create \
+#   --display-name "MinGram Admin" \
+#   --user-principal-name "minigram-admin@$TENANT_DOMAIN" \
+#   --password "$PASSWORD"
+
+# ============================================================
+# 10. Roller
+# ============================================================
+
+printf '\n10. Roller\n'
+
+API_APP_ID=$(az ad app list  \
+  --display-name "$API_NAME" \
+  --query "[0].appId" \
+  -o tsv)
+
+API_APP_OBJECT_ID=$(az ad app list \
+  --display-name "$API_NAME" \
+  --query "[0].id" \
+  -o tsv)
+
+SP_OBJECT_ID=$(az ad sp show \
+  --id "$API_APP_ID" \
+  --query id \
+  -o tsv)
+  
+USER_OBJECT_ID=$(az ad user show \
+  --id "$USER_EMAIL" \
+  --query id \
+  -o tsv)
+
+ROLE_NAME="Admin"
+ROLE_ID=$(az ad app show \
+  --id $API_APP_ID \
+  --query "appRoles[?displayName=='$ROLE_NAME'].id" \
+  -o tsv)
+
+printf 'Skapar roller'
+az rest \
+  --method PATCH \
+  --url "https://graph.microsoft.com/v1.0/applications/$APP_OBJECT_ID" \
+  --headers "Content-Type=application/json" \
+  --body '{
+    "appRoles": [
+      {
+        "allowedMemberTypes": ["User"],
+        "description": "Can manage all MinGram resources.",
+        "displayName": "Admin",
+        "id": "'"$(uuidgen)"'",
+        "isEnabled": true,
+        "value": "Admin"
+      },
+      {
+        "allowedMemberTypes": ["User"],
+        "description": "Can upload and read images.",
+        "displayName": "Fotograf",
+        "id": "'"$(uuidgen)"'",
+        "isEnabled": true,
+        "value": "Fotograf"
+      },
+      {
+        "allowedMemberTypes": ["User"],
+        "description": "Can only read images.",
+        "displayName": "Betraktare",
+        "id": "'"$(uuidgen)"'",
+        "isEnabled": true,
+        "value": "Betraktare"
+      }
+    ]
+  }'
+
+az ad user show \
+  --id "$USER_EMAIL" \
+  --query userPrincipalName \
+  -o tsv
+
+printf 'Existerande roller'
+az ad app show \
+  --id "$API_APP_ID" \
+  --query "appRoles[].value" \
+  -o tsv
+
+printf 'Tilldela roll till user'
+az rest \
+  --method POST \
+  --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
+  --headers "Content-Type=application/json" \
+  --body '{
+    "principalId": "'"$USER_OBJECT_ID"'",
+    "resourceId": "'"$SP_OBJECT_ID"'",
+    "appRoleId": "'"$ROLE_ID"'"
+  }'
+
+print 'Användarens roller i listform'
+az rest \
+  --method GET \
+  --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
+  --query "value[].{resource:resourceDisplayName,roleId:appRoleId,resourceId:resourceId}" \
+  --output table
+
+
+# ============================================================
+# 11. Storage RBAC
+# ============================================================
+
+printf '\n11. Storage RBAC...\n'
+
+printf '\nHämtar Storage Account ID...\n'
+STORAGE_ID=$(az storage account show \
+  --resource-group "$RG" \
+  --name "$STORAGE" \
+  --query id \
+  --output tsv)
+
+printf 'Storage Resource ID:\n%s\n' "$STORAGE_ID"
+
+# Funktion: tilldela RBAC-roll
+assign_role() {
+  local USER_UPN="$1"
+  local ROLE="$2"
+
+  printf '\nTilldelar:\n'
+  printf '  User : %s\n' "$USER_UPN"
+  printf '  Role : %s\n' "$ROLE"
+
+  USER_OBJECT_ID=$(az ad user show \
+    --id "$USER_UPN" \
+    --query id \
+    --output tsv)
+
+  printf '  ID   : %s\n' "$USER_OBJECT_ID"
+
+  az role assignment create \
+    --assignee-object-id "$USER_OBJECT_ID" \
+    --assignee-principal-type User \
+    --role "$ROLE" \
+    --scope "$STORAGE_ID"
+
+  printf '  ✓ Tilldelad\n'
+}
+
+# Example built-in roles for Azure Storage
+ADMIN_ROLE="Storage Blob Data Owner"
+FOTOGRAF_ROLE="Storage Blob Data Contributor"
+BETRAKTARE_ROLE="Storage Blob Data Reader"
+
+# Admin
+printf 'ADMIN\n'
+
+for USER in "${ADMIN_USERS[@]}"; do
+  assign_role "$USER" "$ADMIN_ROLE"
+done
+
+
+# Fotograf
+printf 'FOTOGRAF\n'
+
+for USER in "${FOTOGRAF_USERS[@]}"; do
+  assign_role "$USER" "$FOTOGRAF_ROLE"
+done
+
+
+# Betraktare
+printf 'BETRAKTARE\n'
+
+for USER in "${BETRAKTARE_USERS[@]}"; do
+  assign_role "$USER" "$BETRAKTARE_ROLE"
+done
+
+
+# ============================================================
+# Verifiera
+printf 'Verifierar RBAC-tilldelningar\n'
+
+az role assignment list \
+  --scope "$STORAGE_ID" \
+  --query "[].{User:principalName,Role:roleDefinitionName,Scope:scope}" \
+  -o table
+
+
+# ============================================================
 # Sammanfattning
 # ============================================================
 
@@ -384,19 +601,5 @@ printf 'Storage        : %s\n' "$STORAGE"
 printf 'Container      : %s\n' "$CONTAINER"
 printf 'API            : %s\n' "$API_URL"
 printf 'Frontend       : %s\n' "$FRONTEND_URL"
-
-printf '\n'
-printf '%s\n' "Återstår manuellt:"
-printf '%s\n' "1. Entra ID-användare: admin, fotograf, betraktare"
-printf '%s\n' "2. App Roles: Admin, Fotograf, Betraktare"
-printf '%s\n' "3. Tilldela App Roles till användarna"
-printf '%s\n' "4. Storage RBAC:"
-printf '%s\n' "   Fotograf    → Storage Blob Data Contributor"
-printf '%s\n' "   Betraktare  → Storage Blob Data Reader"
-printf '%s\n' "   Admin       → Storage Blob Data Owner"
-printf '%s\n' "5. Koppla API App Service till Entra ID/Easy Auth"
-printf '%s\n' "6. Testa 401 utan inloggning"
-printf '%s\n' "7. Testa 403 för Betraktare vid DELETE"
-printf '\n'
 
 printf '%s\n' "Klart."
