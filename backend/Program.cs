@@ -32,4 +32,5 @@ var imageService = app.Services.GetRequiredService<ImageService>();
 
 app.MapImageEndpoints(imageService, isDev, devTestRole);
 
+app.UseDeveloperExceptionPage();
 app.Run();

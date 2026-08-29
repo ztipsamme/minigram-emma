@@ -19,9 +19,15 @@ public static class ImageEndpoints
             if (isDev)
                 return Results.Ok(MockImages.Images);
 
-            var images = await imageService.GetAllAsync();
-
-            return Results.Ok(images);
+            try
+            {
+                var images = await imageService.GetAllAsync();
+                return Results.Ok(images);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(detail: ex.ToString(), statusCode: 500);
+            }
         })
         .WithName("HamtaBilder")
         .WithSummary("Hämta alla bilder — alla roller");
