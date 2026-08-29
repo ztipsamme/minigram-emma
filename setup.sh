@@ -829,6 +829,12 @@ az webapp identity assign \
   --query principalId \
   -o tsv)
 
+az role assignment create \
+  --assignee-object-id "$API_PRINCIPAL_ID" \
+  --assignee-principal-type ServicePrincipal \
+  --role "Storage Blob Data Contributor" \
+  --scope "$STORAGE_ID"
+
 echo "$API_PRINCIPAL_ID"
 
 

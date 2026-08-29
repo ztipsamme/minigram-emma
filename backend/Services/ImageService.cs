@@ -1,98 +1,51 @@
+using System.Net.Mime;
 using System.Text.Json;
+using Azure.Identity;
 using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
 
 namespace backend.Services
 {
     public class ImageService
     {
-        private readonly ImageStorageService _imageStorageService;
+        private readonly BlobContainerClient _container;
 
-        public ImageService(ImageStorageService imageStorageService)
+        public ImageService(IConfiguration config)
         {
-            _imageStorageService = imageStorageService;
+            var accountURL = config["Storage:AccountURL"]!;
+            var containerName = config["Storage:Container"] ?? "bilder";
+
+            var serviceClient = new BlobServiceClient(
+                new Uri(accountURL),
+                new DefaultAzureCredential());
+
+            _container = serviceClient.GetBlobContainerClient(containerName);
         }
 
-        public async Task<List<Image>> GetAllAsync()
+        public async Task<string> UploadAsync(string blobName, Stream content, string contentType)
         {
-            var images = new List<Image>();
+            var blob = _container.GetBlobClient(blobName);
 
-            await foreach (var blob in _imageStorageService.GetBlobsAsync())
+            await blob.UploadAsync(content, new Azure.Storage.Blobs.Models.BlobHttpHeaders
             {
-                var image = _imageStorageService.CreateImageFromBlob(blob);
-                if (image is not null)
-                {
-                    images.Add(image);
-                }
-            }
+                ContentType = contentType
+            });
 
-            return images;
+            return blob.Name;
         }
 
-        public async Task<Image?> GetByIdAsync(int id)
+        public async Task<(Stream Content, string ContentType)?> DownloadAsync(string blobName)
         {
-            var blobClient = await _imageStorageService.FindImageBlob(id);
-            if (blobClient is null)
-                return null;
+            var blob = _container.GetBlobClient(blobName);
+            if (!await blob.ExistsAsync()) return null;
 
-            var properties = await blobClient.GetPropertiesAsync();
-            var metadata = properties.Value.Metadata;
-
-            var originalName = metadata.TryGetValue("originalName", out var name)
-                ? name
-                : blobClient.Name;
-
-            var caption = metadata.TryGetValue("caption", out var captionValue)
-                ? captionValue
-                : "";
-
-            var tags = metadata.TryGetValue("tags", out var tagsValue)
-                ? JsonSerializer.Deserialize<List<string>>(tagsValue) ?? []
-                : [];
-
-            return new Image(id, originalName, caption, tags, $"/bilder/{id}/image");
+            var download = await blob.DownloadStreamingAsync();
+            return (download.Value.Content, download.Value.Details.ContentType);
         }
 
-        public async Task<BlobClient?> FindImageBlobAsync(int id) =>
-            await _imageStorageService.FindImageBlob(id);
-
-        public async Task<int> GetNextIdAsync() =>
-            await _imageStorageService.GetNextId();
-
-        public async Task<BlobClient> CreateAsync(NewImage newImage)
+        public async Task DeleteAsync(string blobName)
         {
-            using var httpClient = new HttpClient();
-            var imageBytes = await httpClient.GetByteArrayAsync(newImage.Url);
-
-            var id = await _imageStorageService.GetNextId();
-            var extension = Path.GetExtension(newImage.Name);
-            if (string.IsNullOrWhiteSpace(extension))
-            {
-                extension = ".jpg";
-            }
-
-            var blobName = $"{id}{extension}";
-            var blobClient = _imageStorageService.GetBlobClient(blobName);
-
-            using var imageStream = new MemoryStream(imageBytes);
-
-            await blobClient.UploadAsync(
-                imageStream,
-                new BlobUploadOptions
-                {
-                    HttpHeaders = new BlobHttpHeaders
-                    {
-                        ContentType = ImageStorageService.GetContentType(newImage.Name)
-                    },
-                    Metadata = new Dictionary<string, string>
-                    {
-                        ["originalName"] = newImage.Name,
-                        ["caption"] = newImage.Caption,
-                        ["tags"] = JsonSerializer.Serialize(newImage.Tags ?? [])
-                    }
-                });
-
-            return blobClient;
+            await _container.GetBlobClient(blobName).DeleteIfExistsAsync();
         }
+
     }
 }
