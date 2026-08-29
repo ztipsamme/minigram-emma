@@ -106,9 +106,9 @@ public static class BildEndpoints
             NyBild ny,
             HttpRequest req) =>
         {
-            var roll = RoleMapping.HamtaRoll(req, isDev);
-            if (!RoleMapping.HarBehorighet(roll, "Fotograf") && !RoleMapping.HarBehorighet(roll, "Admin"))
-                return Results.StatusCode(403);
+            // var roll = RoleMapping.HamtaRoll(req, isDev);
+            // if (!RoleMapping.HarBehorighet(roll, "Fotograf") && !RoleMapping.HarBehorighet(roll, "Admin"))
+            //     return Results.StatusCode(403);
 
             if (string.IsNullOrWhiteSpace(ny.Namn))
                 return Results.BadRequest("Bildnamn saknas.");
