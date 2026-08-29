@@ -79,8 +79,8 @@ app.MapGet("/bilder/{id:int}/fil", async (int id) =>
 
 app.MapPost("/bilder", (NyBild ny, HttpRequest req) =>
 {
-    var roll = RoleMapping.GetRole(req, rollMappning, app.Environment);
-    if (!RoleMapping.HasPermission(roll, "Fotograf") && !RoleMapping.HasPermission(roll, "Admin"))
+    var roll = RoleMapping.HamtaRoll(req, rollMappning, app.Environment);
+    if (!RoleMapping.HarBehorighet(roll, "Fotograf") && !RoleMapping.HarBehorighet(roll, "Admin"))
         return Results.StatusCode(403);
 
     var b = new Bild(nastaBildId++, ny.Namn, ny.Caption, ny.Taggar ?? [], ny.Url);
@@ -97,8 +97,8 @@ app.MapPost("/bilder/uppladdning", async (
     [FromForm] string? namn,
     [FromForm] string? taggar) =>
 {
-    var roll = RoleMapping.GetRole(req, rollMappning, app.Environment);
-    if (!RoleMapping.HasPermission(roll, "Fotograf") && !RoleMapping.HasPermission(roll, "Admin"))
+    var roll = RoleMapping.HamtaRoll(req, rollMappning, app.Environment);
+    if (!RoleMapping.HarBehorighet(roll, "Fotograf") && !RoleMapping.HarBehorighet(roll, "Admin"))
         return Results.StatusCode(403);
 
     if (blobContainer is null)
@@ -151,8 +151,8 @@ app.MapPost("/bilder/uppladdning", async (
 
 app.MapPut("/bilder/{id:int}", (int id, BildUpdate update, HttpRequest req) =>
 {
-    var roll = RoleMapping.GetRole(req, rollMappning, app.Environment);
-    if (!RoleMapping.HasPermission(roll, "Fotograf")) return Results.StatusCode(403);
+    var roll = RoleMapping.HamtaRoll(req, rollMappning, app.Environment);
+    if (!RoleMapping.HarBehorighet(roll, "Fotograf")) return Results.StatusCode(403);
     var index = MockImages.Bilder.FindIndex(b => b.Id == id);
     if (index < 0) return Results.NotFound();
     MockImages.Bilder[index] = MockImages.Bilder[index] with
@@ -167,8 +167,8 @@ app.MapPut("/bilder/{id:int}", (int id, BildUpdate update, HttpRequest req) =>
 
 app.MapDelete("/bilder/{id:int}", async (int id, HttpRequest req) =>
 {
-    var roll = RoleMapping.GetRole(req, rollMappning, app.Environment);
-    if (!RoleMapping.HasPermission(roll, "Admin")) return Results.StatusCode(403);
+    var roll = RoleMapping.HamtaRoll(req, rollMappning, app.Environment);
+    if (!RoleMapping.HarBehorighet(roll, "Admin")) return Results.StatusCode(403);
     var b = MockImages.Bilder.FirstOrDefault(b => b.Id == id);
     if (b is null) return Results.NotFound();
     MockImages.Bilder.Remove(b);

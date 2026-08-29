@@ -14,7 +14,7 @@ public static class RoleMapping
         return new Dictionary<string, string>(mapping, StringComparer.OrdinalIgnoreCase);
     }
 
-    public static string GetRole(HttpRequest request, Dictionary<string, string> mapping, IHostEnvironment environment)
+    public static string HamtaRoll(HttpRequest request, Dictionary<string, string> mapping, IHostEnvironment environment)
     {
         var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
 
@@ -41,7 +41,7 @@ public static class RoleMapping
             }
         }
 
-        var email = GetEmail(request);
+        var email = HamtaEmail(request);
         if (email != null && mapping.TryGetValue(email, out var mapped))
             return mapped;
 
@@ -51,7 +51,7 @@ public static class RoleMapping
         return "Betraktare";
     }
 
-    public static string? GetEmail(HttpRequest request)
+    public static string? HamtaEmail(HttpRequest request)
     {
         // Workaround: frontend skickar e-post efter egen Easy Auth-login
         var forwarded = request.Headers["X-User-Email"].FirstOrDefault();
@@ -94,7 +94,7 @@ public static class RoleMapping
         return null;
     }
 
-    public static bool HasPermission(string role, string requiredRole) => (role, requiredRole) switch
+    public static bool HarBehorighet(string role, string requiredRole) => (role, requiredRole) switch
     {
         (_, "Betraktare") => true,
         ("Fotograf" or "Admin", "Fotograf") => true,
