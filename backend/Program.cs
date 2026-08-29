@@ -142,7 +142,6 @@ app.MapPost("/bilder/uppladdning", async (
     }
 })
 .DisableAntiforgery()
-.DisableRequestSizeLimit()
 .WithName("LaddaUppBildFil")
 .WithSummary("Ladda upp bildfil till Blob Storage — kräver Fotograf eller Admin");
 
