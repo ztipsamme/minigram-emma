@@ -23,9 +23,9 @@ namespace backend.Services
             _container = _serviceClient.GetBlobContainerClient(containerName);
         }
 
-        public async Task<List<Image>> GetAllAsync()
+        public async Task<List<ImageDTO>> GetAllAsync()
         {
-            List<Image> res = new();
+            List<ImageDTO> res = new();
 
             var userDelegationKey = await _serviceClient
                 .GetUserDelegationKeyAsync(
@@ -36,14 +36,12 @@ namespace backend.Services
             {
                 var metadata = blobItem.Metadata;
 
+                metadata.TryGetValue("Id", out var id);
                 metadata.TryGetValue("Caption", out var caption);
-                metadata.TryGetValue("Tags", out var tagsRaw);
 
-                var tags = string.IsNullOrWhiteSpace(tagsRaw)
-                    ? new List<string>()
-                    : tagsRaw.Split(',',
-                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                        .ToList();
+                var tags = blobItem.Tags != null
+                            ? blobItem.Tags.Values.ToList()
+                            : new List<string>();
 
                 var blobClient = _container.GetBlobClient(blobItem.Name);
 
@@ -64,8 +62,8 @@ namespace backend.Services
 
                 var sasUri = $"{blobClient.Uri}?{sasToken}";
 
-                res.Add(new Image(
-                    Id: 1,
+                res.Add(new ImageDTO(
+                    Id: id,
                     Name: blobItem.Name,
                     Caption: caption ?? string.Empty,
                     Tags: tags,
@@ -76,7 +74,7 @@ namespace backend.Services
             return res;
         }
 
-        public async Task<Image> GetByIdAsync(int id)
+        public async Task<Image> GetByIdAsync(string id)
         {
             throw new NotImplementedException();
         }
@@ -86,12 +84,12 @@ namespace backend.Services
             throw new NotImplementedException();
         }
 
-        public async Task<Image> UpdateImageAsync(int id, ImageUpdate imageUpdate)
+        public async Task<Image> UpdateImageAsync(string id, ImageUpdate imageUpdate)
         {
             throw new NotImplementedException();
         }
 
-        public async Task<bool> DeleteImageByIdAsync(int id)
+        public async Task<bool> DeleteImageByIdAsync(string id)
         {
             throw new NotImplementedException();
         }

@@ -1,5 +1,5 @@
 public record Image(
-    int Id,
+    string Id,
     string Name,
     string Caption,
     List<string> Tags,
@@ -16,4 +16,12 @@ public record NewImage(
 public record ImageUpdate(
     string? Caption,
     List<string>? Tags
+);
+
+public record ImageDTO(
+    string? Id,
+    string Name,
+    string Caption,
+    List<string> Tags,
+    string Url
 );
