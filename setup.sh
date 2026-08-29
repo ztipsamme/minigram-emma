@@ -25,6 +25,12 @@ CONTAINER="bilder"
 FRONTEND_URL="https://${APP_NAME}.azurewebsites.net"
 API_URL="https://${API_NAME}.azurewebsites.net"
 
+TENANT_DOMAIN="IThogskolan.onmicrosoft.com"
+
+ADMIN_USER="$PROJECT_NAME-$TEAM-admin@$TENANT_DOMAIN"
+FOTOGRAF_USER="$PROJECT_NAME-$TEAM-fotograf@$TENANT_DOMAIN"
+BETRAKTARE_USER="$PROJECT_NAME-$TEAM-betraktare@$TENANT_DOMAIN"
+
 # ------------------------------------------------------------
 # Användare per roll
 #
@@ -38,15 +44,17 @@ API_URL="https://${API_NAME}.azurewebsites.net"
 # ------------------------------------------------------------
 
 ADMIN_USERS=(
-  "emma.spitz@IThogskolan.onmicrosoft.com"
+  "$ADMIN_USER"
 )
 
 FOTOGRAF_USERS=(
+  "$FOTOGRAF_USER"
   # "fotograf1@IThogskolan.onmicrosoft.com"
   # "fotograf2@IThogskolan.onmicrosoft.com"
 )
 
 BETRAKTARE_USERS=(
+  "$BETRAKTARE_USER"
   # "betraktare1@IThogskolan.onmicrosoft.com"
   # "betraktare2@IThogskolan.onmicrosoft.com"
 )
@@ -412,16 +420,35 @@ gh secret set AZURE_CREDENTIALS
 # 10. Users
 # ============================================================
 
-# Om man vill kan man skapa nya users/tenants med nedanstående
-# kod, men vi valde att sätta rollerna på våra egna konton.
+printf '\n10. Skapar MinGram testanvändare...\n'
 
-# TENANT_DOMAIN="IThogskolan.onmicrosoft.com"
-# PASSWORD="MittHemligaLösenord123!"
+# OBS:
+# Använd ett tillfälligt/testlösenord och lagra det inte i Git.
+read -s -p "Lösenord för testkontona: " TEMP_PASSWORD
+# Ex: MittHemligaLösenord123!
+echo
 
-# az ad user create \
-#   --display-name "MinGram Admin" \
-#   --user-principal-name "minigram-admin@$TENANT_DOMAIN" \
-#   --password "$PASSWORD"
+
+# Admin
+az ad user create \
+  --display-name "MinGram Admin" \
+  --user-principal-name "$ADMIN_USER" \
+  --password "$TEMP_PASSWORD" \
+  # --force-change-password-next-login true
+
+# Fotograf
+az ad user create \
+  --display-name "MinGram Fotograf" \
+  --user-principal-name "$FOTOGRAF_USER" \
+  --password "$TEMP_PASSWORD" \
+  # --force-change-password-next-login true
+
+# Betraktare
+az ad user create \
+  --display-name "MinGram Betraktare" \
+  --user-principal-name "$BETRAKTARE_USER" \
+  --password "$TEMP_PASSWORD" \
+  # --force-change-password-next-login true
 
 # ============================================================
 # 10. Roller
@@ -500,23 +527,23 @@ az ad app show \
   --query "appRoles[].value" \
   -o tsv
 
-printf 'Tilldela roll till user'
-az rest \
-  --method POST \
-  --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
-  --headers "Content-Type=application/json" \
-  --body '{
-    "principalId": "'"$USER_OBJECT_ID"'",
-    "resourceId": "'"$SP_OBJECT_ID"'",
-    "appRoleId": "'"$ROLE_ID"'"
-  }'
+# printf 'Tilldela roll till user'
+# az rest \
+#   --method POST \
+#   --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
+#   --headers "Content-Type=application/json" \
+#   --body '{
+#     "principalId": "'"$USER_OBJECT_ID"'",
+#     "resourceId": "'"$SP_OBJECT_ID"'",
+#     "appRoleId": "'"$ROLE_ID"'"
+#   }'
 
-printf 'Användarens roller i listform\n'
-az rest \
-  --method GET \
-  --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
-  --query "value[].{resource:resourceDisplayName,roleId:appRoleId,resourceId:resourceId}" \
-  -o table
+# printf 'Användarens roller i listform\n'
+# az rest \
+#   --method GET \
+#   --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
+#   --query "value[].{resource:resourceDisplayName,roleId:appRoleId,resourceId:resourceId}" \
+#   -o table
 
 
 # ============================================================
