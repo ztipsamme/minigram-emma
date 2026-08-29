@@ -91,7 +91,7 @@ app.MapPost("/bilder", (NyBild ny, HttpRequest req) =>
 
 app.MapPost("/bilder/uppladdning", async (
     HttpRequest req,
-    IFormFile fil,
+    IFormFile? fil,
     [FromForm] string? caption,
     [FromForm] string? namn,
     [FromForm] string? taggar) =>
@@ -99,44 +99,50 @@ app.MapPost("/bilder/uppladdning", async (
     if (!HarBehorighet(HamtaRoll(req), "Fotograf")) return Results.StatusCode(403);
 
     if (blobContainer is null)
-        return Results.Problem("Blob Storage är inte konfigurerat.");
+        return Results.Json(new { error = "Blob Storage är inte konfigurerat." }, statusCode: 500);
 
     if (fil is null || fil.Length == 0)
-        return Results.BadRequest("Skicka en fil i fältet 'fil'.");
+        return Results.BadRequest(new { error = "Skicka en fil i fältet 'fil'." });
 
-    caption = string.IsNullOrWhiteSpace(caption) ? fil.FileName : caption;
-    namn = string.IsNullOrWhiteSpace(namn) ? fil.FileName : namn;
-
-    var taggLista = string.IsNullOrWhiteSpace(taggar)
-        ? new List<string>()
-        : taggar.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToList();
-
-    await blobContainer.CreateIfNotExistsAsync();
-
-    var blobNamn = $"{Guid.NewGuid():N}-{Path.GetFileName(fil.FileName)}";
-    var blob = blobContainer.GetBlobClient(blobNamn);
-
-    var contentType = string.IsNullOrWhiteSpace(fil.ContentType)
-        ? "application/octet-stream"
-        : fil.ContentType;
-
-    var uploadOptions = new BlobUploadOptions
+    try
     {
-        HttpHeaders = new BlobHttpHeaders { ContentType = contentType }
-    };
+        caption = string.IsNullOrWhiteSpace(caption) ? fil.FileName : caption;
+        namn = string.IsNullOrWhiteSpace(namn) ? fil.FileName : namn;
 
-    await using (var stream = fil.OpenReadStream())
-    {
-        await blob.UploadAsync(stream, uploadOptions);
+        var taggLista = string.IsNullOrWhiteSpace(taggar)
+            ? new List<string>()
+            : taggar.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToList();
+
+        var blobNamn = $"{Guid.NewGuid():N}-{Path.GetFileName(fil.FileName)}";
+        var blob = blobContainer.GetBlobClient(blobNamn);
+
+        var contentType = string.IsNullOrWhiteSpace(fil.ContentType)
+            ? "image/jpeg"
+            : fil.ContentType;
+
+        var uploadOptions = new BlobUploadOptions
+        {
+            HttpHeaders = new BlobHttpHeaders { ContentType = contentType }
+        };
+
+        await using (var stream = fil.OpenReadStream())
+        {
+            await blob.UploadAsync(stream, uploadOptions);
+        }
+
+        var url = SkapaLasbarUrl(blob);
+        var b = new Bild(nastaBildId++, namn, caption, taggLista, url);
+        bilder.Add(b);
+        return Results.Created($"/bilder/{b.Id}", b);
     }
-
-    var url = SkapaLasbarUrl(blob);
-    var b = new Bild(nastaBildId++, namn, caption, taggLista, url);
-    bilder.Add(b);
-    return Results.Created($"/bilder/{b.Id}", b);
+    catch (Exception ex)
+    {
+        return Results.Json(new { error = ex.GetType().Name, message = ex.Message }, statusCode: 500);
+    }
 })
 .DisableAntiforgery()
+.DisableRequestSizeLimit()
 .WithName("LaddaUppBildFil")
 .WithSummary("Ladda upp bildfil till Blob Storage — kräver Fotograf eller Admin");
 
