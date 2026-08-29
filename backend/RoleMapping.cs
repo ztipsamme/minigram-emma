@@ -3,7 +3,7 @@ using System.Text.Json;
 
 public static class RoleMapping
 {
-    public static string HamtaRoll(HttpRequest request, bool isDevEnv)
+    public static string GetRole(HttpRequest request, bool isDevEnv)
     {
         var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
 
@@ -36,7 +36,7 @@ public static class RoleMapping
 
         return "Betraktare"; // okänd roll → minsta behörighet
     }
-    public static bool HarBehorighet(string roll, string kravRoll) => (roll, kravRoll) switch
+    public static bool HasPermission(string role, string claimRole) => (role, claimRole) switch
     {
         (_, "Betraktare") => true,
         ("Fotograf" or "Admin", "Fotograf") => true,

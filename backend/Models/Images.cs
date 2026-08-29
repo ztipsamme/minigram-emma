@@ -1,3 +1,3 @@
-public record Bild(int Id, string Namn, string Caption, List<string> Taggar, string Url);
-public record NyBild(string Namn, string Caption, List<string>? Taggar, string Url);
-public record BildUpdate(string? Caption, List<string>? Taggar);
+public record Image(int Id, string Name, string Caption, List<string> Tags, string Url);
+public record NewImage(string Name, string Caption, List<string>? Tags, string Url);
+public record ImageUpdate(string? Caption, List<string>? TaggTagsr);

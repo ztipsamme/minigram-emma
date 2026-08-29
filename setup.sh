@@ -830,3 +830,8 @@ az webapp identity assign \
   -o tsv)
 
 echo "$API_PRINCIPAL_ID"
+
+
+# To do
+# Lägg till script för att till låt din egen IP-adress
+# i Storage Account så inte firewall:en stoppar
