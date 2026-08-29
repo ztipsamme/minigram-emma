@@ -22,10 +22,10 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        run: dotnet restore backend/MinGramApi.csproj
+        run: dotnet restore backend/MinGramApi.csproj -r linux-x64
 
-      - name: Build
-        run: dotnet build backend/MinGramApi.csproj --configuration Release --no-restore
+      # - name: Build
+      #   run: dotnet build backend/MinGramApi.csproj --configuration Release --no-restore
 
       - name: Publish
         run: dotnet publish backend/MinGramApi.csproj --configuration Release -r linux-x64 --no-build --output ./publish
