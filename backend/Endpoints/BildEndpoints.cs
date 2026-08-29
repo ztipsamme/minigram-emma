@@ -11,7 +11,7 @@ public static class ImageEndpoints
     {
         var nextImage = 2;
 
-        app.MapPost("/bilder", async (IFormFile file, string caption, string[]? tags, ImageService imageService, HttpRequest req) =>
+        app.MapPost("/bilder", async (IFormFile file, string caption, string? tags, ImageService imageService, HttpRequest req) =>
         {
             var role = RoleMapping.GetRole(req, isDev);
             if (!RoleMapping.HasPermission(role, "Fotograf") && !RoleMapping.HasPermission(role, "Admin")) return Results.StatusCode(403);
@@ -20,7 +20,9 @@ public static class ImageEndpoints
             await using var stream = file.OpenReadStream();
             await imageService.UploadAsync(blobName, stream, file.ContentType);
 
-            var b = new Image(nextImage++, file.FileName, caption, tags != null ? tags.ToList() : [], blobName);
+            var tagList = tags?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList() ?? [];
+
+            var b = new Image(nextImage++, file.FileName, caption, tagList, blobName);
 
             MockImages.Images.Add(b);
 
