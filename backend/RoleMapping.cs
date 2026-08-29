@@ -14,41 +14,41 @@ public static class RoleMapping
         return new Dictionary<string, string>(mapping, StringComparer.OrdinalIgnoreCase);
     }
 
-    public static string HamtaRoll(HttpRequest request, Dictionary<string, string> mapping, IHostEnvironment environment)
+    public static string HamtaRoll(HttpRequest request, bool isDevEnv)
     {
         var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
 
-        if (!string.IsNullOrEmpty(header))
+        if (string.IsNullOrEmpty(header))
         {
-            try
+            if (isDevEnv)
             {
-                var json = Encoding.UTF8.GetString(Convert.FromBase64String(header));
-                using var doc = JsonDocument.Parse(json);
-
-                foreach (var claim in doc.RootElement.GetProperty("claims").EnumerateArray())
-                {
-                    var typ = claim.TryGetProperty("typ", out var t1) ? t1.GetString()
-                        : claim.TryGetProperty("type", out var t2) ? t2.GetString()
-                        : null;
-
-                    if (typ == "roles")
-                        return claim.GetProperty("val").GetString() ?? "Betraktare";
-                }
+                return "Admin";
             }
-            catch
-            {
-                // fall through till e-postmappning
-            }
+
+            return "Betraktare";
         }
 
-        var email = HamtaEmail(request);
-        if (email != null && mapping.TryGetValue(email, out var mapped))
-            return mapped;
+        try
+        {
+            var json = Encoding.UTF8.GetString(Convert.FromBase64String(header));
+            using var doc = JsonDocument.Parse(json);
 
-        if (string.IsNullOrEmpty(header) && environment.IsDevelopment())
-            return "Admin";
+            var claims = doc.RootElement.GetProperty("claims").EnumerateArray();
 
-        return "Betraktare";
+            foreach (var claim in claims)
+            {
+                if (claim.GetProperty("typ").GetString() == "roles")
+                    return claim
+                                .GetProperty("val")
+                                .GetString() ?? "Betraktare";
+            }
+        }
+        catch
+        {
+            return "Betraktare";
+        }
+
+        return "Betraktare"; // okänd roll → minsta behörighet
     }
 
     public static string? HamtaEmail(HttpRequest request)
