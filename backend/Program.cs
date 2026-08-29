@@ -77,13 +77,11 @@ app.MapGet("/bilder", async () =>
     {
         var bilder = new List<Bild>();
 
-        var options = new GetBlobsOptions
-        {
-            Traits = BlobTraits.Metadata,
-            States = BlobStates.None
-        };
-
-        await foreach (var blob in containerClient.GetBlobsAsync(options))
+        await foreach (var blob in containerClient.GetBlobsAsync(
+            BlobTraits.Metadata,
+            BlobStates.None,
+            null,
+            default))
         {
             var bild = CreateBildFromBlob(blob);
 
@@ -96,14 +94,13 @@ app.MapGet("/bilder", async () =>
         return Results.Ok(bilder);
     }
     catch (Exception ex)
-{
-    Console.WriteLine(ex.ToString());
+    {
+        Console.WriteLine(ex.ToString());
 
-    return Results.Problem(
-        statusCode: 500,
-        title: "Error accessing Blob Storage",
-        detail: ex.Message);
-
+        return Results.Problem(
+            statusCode: 500,
+            title: "Error accessing Blob Storage",
+            detail: ex.Message);
     }
 })
 .WithName("HamtaBilder")
