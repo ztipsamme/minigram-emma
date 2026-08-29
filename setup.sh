@@ -39,6 +39,8 @@ API_URL="https://${API_NAME}.azurewebsites.net"
 
 ADMIN_USERS=(
   "emma.spitz@IThogskolan.onmicrosoft.com"
+  "josef.alhusseini@ithogskolan.onmicrosoft.com"
+  "josef.alhusseini@iths.se"
 )
 
 FOTOGRAF_USERS=(
