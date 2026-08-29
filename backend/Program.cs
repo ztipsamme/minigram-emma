@@ -14,7 +14,6 @@ using System.Text;
 using System.Text.Json;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Azure.Storage.Sas;
 using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -66,6 +65,11 @@ var bilder = new List<Bild>
         "https://placehold.co/400x300?text=MinGram")
 };
 var nastaBildId = 2;
+// Blobnamn per bild-id — webbläsaren får inte gå direkt till storage (firewall Deny).
+var blobNamnPerId = new Dictionary<int, string>();
+
+string BildUrl(HttpRequest req, int id)
+    => $"{req.Scheme}://{req.Host}/bilder/{id}/fil";
 
 app.MapGet("/bilder", () => bilder)
    .WithName("HamtaBilder")
@@ -78,6 +82,29 @@ app.MapGet("/bilder/{id:int}", (int id) =>
 })
 .WithName("HamtaBild")
 .WithSummary("Hämta en specifik bild — alla roller");
+
+app.MapGet("/bilder/{id:int}/fil", async (int id) =>
+{
+    if (blobContainer is null)
+        return Results.Problem("Blob Storage är inte konfigurerat.");
+
+    if (!blobNamnPerId.TryGetValue(id, out var blobNamn))
+        return Results.NotFound();
+
+    var blob = blobContainer.GetBlobClient(blobNamn);
+    if (!await blob.ExistsAsync())
+        return Results.NotFound();
+
+    var props = await blob.GetPropertiesAsync();
+    var download = await blob.DownloadStreamingAsync();
+    var contentType = string.IsNullOrWhiteSpace(props.Value.ContentType)
+        ? "image/jpeg"
+        : props.Value.ContentType;
+
+    return Results.File(download.Value.Content, contentType);
+})
+.WithName("HamtaBildFil")
+.WithSummary("Streama bildfil via API (så storage kan vara stängd utåt)");
 
 app.MapPost("/bilder", (NyBild ny, HttpRequest req) =>
 {
@@ -131,8 +158,9 @@ app.MapPost("/bilder/uppladdning", async (
             await blob.UploadAsync(stream, uploadOptions);
         }
 
-        var url = SkapaLasbarUrl(blob);
-        var b = new Bild(nastaBildId++, namn, caption, taggLista, url);
+        var id = nastaBildId++;
+        blobNamnPerId[id] = blobNamn;
+        var b = new Bild(id, namn, caption, taggLista, BildUrl(req, id));
         bilder.Add(b);
         return Results.Created($"/bilder/{b.Id}", b);
     }
@@ -160,33 +188,25 @@ app.MapPut("/bilder/{id:int}", (int id, BildUpdate update, HttpRequest req) =>
 .WithName("UppdateraBild")
 .WithSummary("Uppdatera bild — kräver Fotograf eller Admin");
 
-app.MapDelete("/bilder/{id:int}", (int id, HttpRequest req) =>
+app.MapDelete("/bilder/{id:int}", async (int id, HttpRequest req) =>
 {
     if (!HarBehorighet(HamtaRoll(req), "Admin")) return Results.StatusCode(403);
     var b = bilder.FirstOrDefault(b => b.Id == id);
     if (b is null) return Results.NotFound();
     bilder.Remove(b);
+
+    if (blobNamnPerId.Remove(id, out var blobNamn) && blobContainer is not null)
+    {
+        try { await blobContainer.DeleteBlobIfExistsAsync(blobNamn); }
+        catch { /* radera metadata även om blob misslyckas */ }
+    }
+
     return Results.NoContent();
 })
 .WithName("RaderaBild")
 .WithSummary("Radera bild — kräver Admin");
 
 app.Run();
-
-string SkapaLasbarUrl(BlobClient blob)
-{
-    if (blob.CanGenerateSasUri)
-    {
-        var sas = new BlobSasBuilder(BlobSasPermissions.Read, DateTimeOffset.UtcNow.AddYears(1))
-        {
-            BlobContainerName = blob.BlobContainerName,
-            BlobName = blob.Name
-        };
-        return blob.GenerateSasUri(sas).ToString();
-    }
-
-    return blob.Uri.ToString();
-}
 
 string? HamtaEmail(HttpRequest request)
 {
