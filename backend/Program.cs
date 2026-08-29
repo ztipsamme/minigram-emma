@@ -5,30 +5,23 @@ ASP.NET Core Minimal API: endpoints definieras direkt här, inga controllers.
 Starta lokalt:  dotnet run
 Swagger UI:     https://localhost:{port}/swagger
 
-v35 — Azure-konfiguration (görs i portalen, inte i koden):
-1. CORS: App Service → API → CORS → lägg till din frontend-URL
-2. Easy Auth: App Service → Authentication → Add identity provider → Microsoft
-   Välj din Entra ID-tenant. Alla anrop kräver nu inloggning.
-3. App-roller i Entra ID: gå till App registrations → din app → App roles
-   Skapa rollerna Betraktare, Fotograf, Admin.
-   Tilldela dem till dina Entra ID-användare under Enterprise applications.
-
-Bilder lagras som URL:er — ladda upp till Azure Blob Storage och skicka URL:en hit.
+Frontend (minigram-app-emma) pratar med API:t via publika HTTPS-URL:en.
+VNet/subnet styr framför allt API → Storage (backend-subnet), inte webbläsaren.
+CORS måste tillåta frontend-URL:en.
 */
 
 using System.Text;
 using System.Text.Json;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using Azure.Storage.Sas;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-/*
-CORS — hanteras primärt i Azure Portal: App Service → API → CORS
-Lägg till din frontend-URL där, så slipper du ändra och redeploya koden.
-Den här koden hanterar CORS lokalt under utveckling.
-*/
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("MinGramPolicy", policy =>
@@ -48,12 +41,24 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors("MinGramPolicy");
 
-/* 
--------------------------------------------------------
-In-memory datastore med seed-data
-Datan nollställs vid omstart — en riktig app lagrar bilder i Blob Storage
-------------------------------------------------------- 
-*/
+var rollMappningJson = builder.Configuration["RollMappningJson"];
+var rollMappning =
+    string.IsNullOrEmpty(rollMappningJson)
+        ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        : JsonSerializer.Deserialize<Dictionary<string, string>>(rollMappningJson)
+          ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+rollMappning = new Dictionary<string, string>(rollMappning, StringComparer.OrdinalIgnoreCase);
+
+var storageConn = builder.Configuration["AzureStorageConnectionString"];
+var containerNamn = builder.Configuration["AzureStorageContainer"] ?? "bilder";
+BlobContainerClient? blobContainer = null;
+
+if (!string.IsNullOrWhiteSpace(storageConn))
+{
+    var blobService = new BlobServiceClient(storageConn);
+    blobContainer = blobService.GetBlobContainerClient(containerNamn);
+}
 
 var bilder = new List<Bild>
 {
@@ -62,13 +67,6 @@ var bilder = new List<Bild>
 };
 var nastaBildId = 2;
 
-/*
-======================================================
-Bilder
-====================================================== 
-*/
-
-// Alla roller får se bilder
 app.MapGet("/bilder", () => bilder)
    .WithName("HamtaBilder")
    .WithSummary("Hämta alla bilder — alla roller");
@@ -81,10 +79,6 @@ app.MapGet("/bilder/{id:int}", (int id) =>
 .WithName("HamtaBild")
 .WithSummary("Hämta en specifik bild — alla roller");
 
-/* 
-Fotograf och Admin får ladda upp bilder
-Skicka URL:en till bilden — lagra filen i Azure Blob Storage och använd den URL:en här 
-*/
 app.MapPost("/bilder", (NyBild ny, HttpRequest req) =>
 {
     if (!HarBehorighet(HamtaRoll(req), "Fotograf")) return Results.StatusCode(403);
@@ -93,9 +87,65 @@ app.MapPost("/bilder", (NyBild ny, HttpRequest req) =>
     return Results.Created($"/bilder/{b.Id}", b);
 })
 .WithName("LaddaUppBild")
-.WithSummary("Lägg till bild — kräver Fotograf eller Admin");
+.WithSummary("Lägg till bild via URL — kräver Fotograf eller Admin");
 
-// Fotograf och Admin får uppdatera caption och taggar
+app.MapPost("/bilder/uppladdning", async (
+    HttpRequest req,
+    IFormFile? fil,
+    [FromForm] string? caption,
+    [FromForm] string? namn,
+    [FromForm] string? taggar) =>
+{
+    if (!HarBehorighet(HamtaRoll(req), "Fotograf")) return Results.StatusCode(403);
+
+    if (blobContainer is null)
+        return Results.Json(new { error = "Blob Storage är inte konfigurerat." }, statusCode: 500);
+
+    if (fil is null || fil.Length == 0)
+        return Results.BadRequest(new { error = "Skicka en fil i fältet 'fil'." });
+
+    try
+    {
+        caption = string.IsNullOrWhiteSpace(caption) ? fil.FileName : caption;
+        namn = string.IsNullOrWhiteSpace(namn) ? fil.FileName : namn;
+
+        var taggLista = string.IsNullOrWhiteSpace(taggar)
+            ? new List<string>()
+            : taggar.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToList();
+
+        var blobNamn = $"{Guid.NewGuid():N}-{Path.GetFileName(fil.FileName)}";
+        var blob = blobContainer.GetBlobClient(blobNamn);
+
+        var contentType = string.IsNullOrWhiteSpace(fil.ContentType)
+            ? "image/jpeg"
+            : fil.ContentType;
+
+        var uploadOptions = new BlobUploadOptions
+        {
+            HttpHeaders = new BlobHttpHeaders { ContentType = contentType }
+        };
+
+        await using (var stream = fil.OpenReadStream())
+        {
+            await blob.UploadAsync(stream, uploadOptions);
+        }
+
+        var url = SkapaLasbarUrl(blob);
+        var b = new Bild(nastaBildId++, namn, caption, taggLista, url);
+        bilder.Add(b);
+        return Results.Created($"/bilder/{b.Id}", b);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { error = ex.GetType().Name, message = ex.Message }, statusCode: 500);
+    }
+})
+.DisableAntiforgery()
+.DisableRequestSizeLimit()
+.WithName("LaddaUppBildFil")
+.WithSummary("Ladda upp bildfil till Blob Storage — kräver Fotograf eller Admin");
+
 app.MapPut("/bilder/{id:int}", (int id, BildUpdate update, HttpRequest req) =>
 {
     if (!HarBehorighet(HamtaRoll(req), "Fotograf")) return Results.StatusCode(403);
@@ -111,7 +161,6 @@ app.MapPut("/bilder/{id:int}", (int id, BildUpdate update, HttpRequest req) =>
 .WithName("UppdateraBild")
 .WithSummary("Uppdatera bild — kräver Fotograf eller Admin");
 
-// Bara Admin får ta bort bilder — testa med Postman som Betraktare för att se 403
 app.MapDelete("/bilder/{id:int}", (int id, HttpRequest req) =>
 {
     if (!HarBehorighet(HamtaRoll(req), "Admin")) return Results.StatusCode(403);
@@ -125,54 +174,102 @@ app.MapDelete("/bilder/{id:int}", (int id, HttpRequest req) =>
 
 app.Run();
 
-/* 
-======================================================
-Rollkontroll
-======================================================
-
-Läser rollen ur Easy Auth-headern som Azure injicerar efter inloggning.
-Lokalt (utan Easy Auth): returnerar "Admin" så Swagger fungerar utan inloggning. 
-*/
-string HamtaRoll(HttpRequest request)
+string SkapaLasbarUrl(BlobClient blob)
 {
-    var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
-
-    if (string.IsNullOrEmpty(header))
+    if (blob.CanGenerateSasUri)
     {
-        if (app.Environment.IsDevelopment())
+        var sas = new BlobSasBuilder(BlobSasPermissions.Read, DateTimeOffset.UtcNow.AddYears(1))
         {
-            return "Admin";
-        }
-
-        return "Betraktare";
+            BlobContainerName = blob.BlobContainerName,
+            BlobName = blob.Name
+        };
+        return blob.GenerateSasUri(sas).ToString();
     }
+
+    return blob.Uri.ToString();
+}
+
+string? HamtaEmail(HttpRequest request)
+{
+    // Workaround: frontend skickar e-post efter egen Easy Auth-login
+    // (när API:t kör AllowAnonymous / auth av).
+    var forwarded = request.Headers["X-User-Email"].FirstOrDefault();
+    if (!string.IsNullOrWhiteSpace(forwarded) && forwarded.Contains('@'))
+        return forwarded.Trim();
+
+    var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
+    if (string.IsNullOrEmpty(header)) return null;
 
     try
     {
         var json = Encoding.UTF8.GetString(Convert.FromBase64String(header));
         using var doc = JsonDocument.Parse(json);
 
-        var claims = doc.RootElement.GetProperty("claims").EnumerateArray();
-
-        foreach (var claim in claims)
+        foreach (var claim in doc.RootElement.GetProperty("claims").EnumerateArray())
         {
-            if (claim.GetProperty("typ").GetString() == "roles")
-                return claim
-                            .GetProperty("val")
-                            .GetString() ?? "Betraktare";
+            var typ = claim.TryGetProperty("typ", out var t1) ? t1.GetString()
+                    : claim.TryGetProperty("type", out var t2) ? t2.GetString()
+                    : null;
+
+            if (typ is "roles")
+                continue;
+
+            if (typ is "preferred_username"
+                or "upn"
+                or "emails"
+                or "email"
+                or "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"
+                or "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
+                or "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name")
+            {
+                var val = claim.GetProperty("val").GetString();
+                if (!string.IsNullOrWhiteSpace(val) && val.Contains('@'))
+                    return val;
+            }
         }
     }
-    catch
-    {
-        return "Betraktare";
-    }
+    catch { }
 
-    return "Betraktare"; // okänd roll → minsta behörighet
+    return null;
 }
 
-/*Kontrollerar om en roll har tillräcklig behörighet.
-Hierarki: Betraktare < Fotograf < Admin
-*/
+string HamtaRoll(HttpRequest request)
+{
+    var header = request.Headers["X-MS-CLIENT-PRINCIPAL"].FirstOrDefault();
+
+    if (!string.IsNullOrEmpty(header))
+    {
+        try
+        {
+            var json = Encoding.UTF8.GetString(Convert.FromBase64String(header));
+            using var doc = JsonDocument.Parse(json);
+
+            foreach (var claim in doc.RootElement.GetProperty("claims").EnumerateArray())
+            {
+                var typ = claim.TryGetProperty("typ", out var t1) ? t1.GetString()
+                        : claim.TryGetProperty("type", out var t2) ? t2.GetString()
+                        : null;
+
+                if (typ == "roles")
+                    return claim.GetProperty("val").GetString() ?? "Betraktare";
+            }
+        }
+        catch
+        {
+            // fall through till e-postmappning
+        }
+    }
+
+    var email = HamtaEmail(request);
+    if (email != null && rollMappning.TryGetValue(email, out var mappad))
+        return mappad;
+
+    if (string.IsNullOrEmpty(header) && app.Environment.IsDevelopment())
+        return "Admin";
+
+    return "Betraktare";
+}
+
 bool HarBehorighet(string roll, string kravRoll) => (roll, kravRoll) switch
 {
     (_, "Betraktare") => true,
@@ -181,12 +278,6 @@ bool HarBehorighet(string roll, string kravRoll) => (roll, kravRoll) switch
     _ => false
 };
 
-/* 
-======================================================
-Datamodeller
-======================================================
-*/
 record Bild(int Id, string Namn, string Caption, List<string> Taggar, string Url);
-
 record NyBild(string Namn, string Caption, List<string>? Taggar, string Url);
 record BildUpdate(string? Caption, List<string>? Taggar);

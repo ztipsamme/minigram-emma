@@ -44,17 +44,20 @@ BETRAKTARE_USER="$PROJECT_NAME-$TEAM-betraktare@$TENANT_DOMAIN"
 # ------------------------------------------------------------
 
 ADMIN_USERS=(
-  "$ADMIN_USER"
+  # "$ADMIN_USER"
+  "emma.spitz@ithogskolan.onmicrosoft.com"
+  "josef.alhusseini@ithogskolan.onmicrosoft.com"
+  "josef.alhusseini@iths.se"
 )
 
 FOTOGRAF_USERS=(
-  "$FOTOGRAF_USER"
+  # "$FOTOGRAF_USER"
   # "fotograf1@IThogskolan.onmicrosoft.com"
   # "fotograf2@IThogskolan.onmicrosoft.com"
 )
 
 BETRAKTARE_USERS=(
-  "$BETRAKTARE_USER"
+  # "$BETRAKTARE_USER"
   # "betraktare1@IThogskolan.onmicrosoft.com"
   # "betraktare2@IThogskolan.onmicrosoft.com"
 )
