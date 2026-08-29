@@ -25,6 +25,12 @@ CONTAINER="bilder"
 FRONTEND_URL="https://${APP_NAME}.azurewebsites.net"
 API_URL="https://${API_NAME}.azurewebsites.net"
 
+TENANT_DOMAIN="IThogskolan.onmicrosoft.com"
+
+ADMIN_USER="$PROJECT_NAME-$TEAM-admin@$TENANT_DOMAIN"
+FOTOGRAF_USER="$PROJECT_NAME-$TEAM-fotograf@$TENANT_DOMAIN"
+BETRAKTARE_USER="$PROJECT_NAME-$TEAM-betraktare@$TENANT_DOMAIN"
+
 # ------------------------------------------------------------
 # Användare per roll
 #
@@ -38,15 +44,20 @@ API_URL="https://${API_NAME}.azurewebsites.net"
 # ------------------------------------------------------------
 
 ADMIN_USERS=(
-  "emma.spitz@IThogskolan.onmicrosoft.com"
+  # "$ADMIN_USER"
+  "emma.spitz@ithogskolan.onmicrosoft.com"
+  "josef.alhusseini@ithogskolan.onmicrosoft.com"
+  "josef.alhusseini@iths.se"
 )
 
 FOTOGRAF_USERS=(
+  # "$FOTOGRAF_USER"
   # "fotograf1@IThogskolan.onmicrosoft.com"
   # "fotograf2@IThogskolan.onmicrosoft.com"
 )
 
 BETRAKTARE_USERS=(
+  # "$BETRAKTARE_USER"
   # "betraktare1@IThogskolan.onmicrosoft.com"
   # "betraktare2@IThogskolan.onmicrosoft.com"
 )
@@ -412,16 +423,35 @@ gh secret set AZURE_CREDENTIALS
 # 10. Users
 # ============================================================
 
-# Om man vill kan man skapa nya users/tenants med nedanstående
-# kod, men vi valde att sätta rollerna på våra egna konton.
+printf '\n10. Skapar MinGram testanvändare...\n'
 
-# TENANT_DOMAIN="IThogskolan.onmicrosoft.com"
-# PASSWORD="MittHemligaLösenord123!"
+# OBS:
+# Använd ett tillfälligt/testlösenord och lagra det inte i Git.
+read -s -p "Lösenord för testkontona: " TEMP_PASSWORD
+# Ex: MittHemligaLösenord123!
+echo
 
-# az ad user create \
-#   --display-name "MinGram Admin" \
-#   --user-principal-name "minigram-admin@$TENANT_DOMAIN" \
-#   --password "$PASSWORD"
+
+# Admin
+az ad user create \
+  --display-name "MinGram Admin" \
+  --user-principal-name "$ADMIN_USER" \
+  --password "$TEMP_PASSWORD" \
+  # --force-change-password-next-login true
+
+# Fotograf
+az ad user create \
+  --display-name "MinGram Fotograf" \
+  --user-principal-name "$FOTOGRAF_USER" \
+  --password "$TEMP_PASSWORD" \
+  # --force-change-password-next-login true
+
+# Betraktare
+az ad user create \
+  --display-name "MinGram Betraktare" \
+  --user-principal-name "$BETRAKTARE_USER" \
+  --password "$TEMP_PASSWORD" \
+  # --force-change-password-next-login true
 
 # ============================================================
 # 10. Roller
@@ -489,6 +519,9 @@ az rest \
     ]
   }'
 
+read -s -p "Din microsoft email: " USER_EMAIL
+echo $USER_EMAIL
+
 az ad user show \
   --id "$USER_EMAIL" \
   --query userPrincipalName \
@@ -500,16 +533,24 @@ az ad app show \
   --query "appRoles[].value" \
   -o tsv
 
-printf 'Tilldela roll till user'
-az rest \
-  --method POST \
-  --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
-  --headers "Content-Type=application/json" \
-  --body '{
-    "principalId": "'"$USER_OBJECT_ID"'",
-    "resourceId": "'"$SP_OBJECT_ID"'",
-    "appRoleId": "'"$ROLE_ID"'"
-  }'
+  az ad app show \
+  --id "$(az ad app list \
+    --display-name "$API_NAME" \
+    --query "[0].appId" \
+    -o tsv)" \
+  --query "appRoles[].{Name:displayName,Value:value,Id:id,Enabled:isEnabled}" \
+  -o table
+
+# printf 'Tilldela roll till user'
+# az rest \
+#   --method POST \
+#   --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
+#   --headers "Content-Type=application/json" \
+#   --body '{
+#     "principalId": "'"$USER_OBJECT_ID"'",
+#     "resourceId": "'"$SP_OBJECT_ID"'",
+#     "appRoleId": "'"$ROLE_ID"'"
+#   }'
 
 printf 'Användarens roller i listform\n'
 az rest \
@@ -602,7 +643,7 @@ az role assignment list \
 # Postman
 # ============================================================
 
-printf 'Postman-App Registration'
+printf '\n12. Postman-App Registration\n'
 
 # Postman App
 #    │
@@ -613,6 +654,7 @@ printf 'Postman-App Registration'
 #                ▼
 #           MinGram API
 
+TENANT_ID=$(az account show --query tenantId -o tsv)
 POSTMAN_APP_NAME="$PROJECT_NAME-postman-$TEAM"
 POSTMAN_REDIRECT_URI="https://oauth.pstmn.io/v1/browser-callback"
 
@@ -684,32 +726,56 @@ az ad app show \
   --query "isFallbackPublicClient" \
   -o tsv
 
+
 # Postman config
-# Postman → Authorization → OAuth 2.0 → Configure New Token
 
-# Grant Type:
-# Authorization Code with PKCE
+POSTMAN_AUTH_URL="https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/authorize"
+POSTMAN_TOKEN_URL="https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token"
+POSTMAN_SCOPE="api://$API_APP_ID/user_impersonation"
 
-# Callback URL:
-# https://oauth.pstmn.io/v1/browser-callback
+cat <<EOF
 
-# Auth URL:
-# https://login.microsoftonline.com/5b679921-53f7-4642-a251-8a603608d21c/oauth2/v2.0/authorize
+Postman OAuth 2.0 configuration
 
-# Access Token URL:
-# https://login.microsoftonline.com/5b679921-53f7-4642-a251-8a603608d21c/oauth2/v2.0/token
+Klistra in följande i postman
 
-# Client ID:
-# c908bed1-92c5-4263-bc1b-0295be219f33
+Token Name:
+MinGram Entra
 
-# Scope:
-# api://331b5459-b32e-4154-b206-f5ee87acbaeb/user_impersonation
+Grant Type:
+Authorization Code (With PKCE)
 
-# Code Challenge Method:
-# SHA-256
+Callback URL:
+https://oauth.pstmn.io/v1/browser-callback
 
-# Client Authentication
-# Send client credentials in body
+Auth URL:
+$POSTMAN_AUTH_URL
+
+Access Token URL:
+$POSTMAN_TOKEN_URL
+
+Client ID:
+$POSTMAN_APP_ID
+
+Client Secret:
+(leave empty)
+
+Code Challenge Method:
+SHA-256
+
+Code Verifier:
+(leave empty - Postman generates it)
+
+Scope:
+$POSTMAN_SCOPE
+
+State:
+(leave empty)
+
+Client Authentication:
+Send client credentials in body
+
+EOF
 
 # Postman
 #    ↓ OAuth 2.0

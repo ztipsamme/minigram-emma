@@ -15,5 +15,18 @@
 
     @* Blazors JavaScript — krävs för att interaktiviteten ska fungera *@
     <script src="_framework/blazor.web.js"></script>
+    <script>
+        window.fetchAuthUser = async function () {
+            const response = await fetch('/.auth/me', {
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                return [];
+            }
+
+            return await response.json();
+        };
+    </script>
 </body>
 </html>
