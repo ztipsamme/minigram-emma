@@ -602,7 +602,7 @@ az role assignment list \
 # Postman
 # ============================================================
 
-printf 'Postman-App Registration'
+printf '\n12. Postman-App Registration\n'
 
 # Postman App
 #    │
@@ -613,6 +613,7 @@ printf 'Postman-App Registration'
 #                ▼
 #           MinGram API
 
+TENANT_ID=$(az account show --query tenantId -o tsv)
 POSTMAN_APP_NAME="$PROJECT_NAME-postman-$TEAM"
 POSTMAN_REDIRECT_URI="https://oauth.pstmn.io/v1/browser-callback"
 
@@ -684,32 +685,56 @@ az ad app show \
   --query "isFallbackPublicClient" \
   -o tsv
 
+
 # Postman config
-# Postman → Authorization → OAuth 2.0 → Configure New Token
 
-# Grant Type:
-# Authorization Code with PKCE
+POSTMAN_AUTH_URL="https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/authorize"
+POSTMAN_TOKEN_URL="https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token"
+POSTMAN_SCOPE="api://$API_APP_ID/user_impersonation"
 
-# Callback URL:
-# https://oauth.pstmn.io/v1/browser-callback
+cat <<EOF
 
-# Auth URL:
-# https://login.microsoftonline.com/5b679921-53f7-4642-a251-8a603608d21c/oauth2/v2.0/authorize
+Postman OAuth 2.0 configuration
 
-# Access Token URL:
-# https://login.microsoftonline.com/5b679921-53f7-4642-a251-8a603608d21c/oauth2/v2.0/token
+Klistra in följande i postman
 
-# Client ID:
-# c908bed1-92c5-4263-bc1b-0295be219f33
+Token Name:
+MinGram Entra
 
-# Scope:
-# api://331b5459-b32e-4154-b206-f5ee87acbaeb/user_impersonation
+Grant Type:
+Authorization Code (With PKCE)
 
-# Code Challenge Method:
-# SHA-256
+Callback URL:
+https://oauth.pstmn.io/v1/browser-callback
 
-# Client Authentication
-# Send client credentials in body
+Auth URL:
+$POSTMAN_AUTH_URL
+
+Access Token URL:
+$POSTMAN_TOKEN_URL
+
+Client ID:
+$POSTMAN_APP_ID
+
+Client Secret:
+(leave empty)
+
+Code Challenge Method:
+SHA-256
+
+Code Verifier:
+(leave empty - Postman generates it)
+
+Scope:
+$POSTMAN_SCOPE
+
+State:
+(leave empty)
+
+Client Authentication:
+Send client credentials in body
+
+EOF
 
 # Postman
 #    ↓ OAuth 2.0
