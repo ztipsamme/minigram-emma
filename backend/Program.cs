@@ -13,7 +13,7 @@ builder.Services.AddSingleton(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
     var env = sp.GetRequiredService<IWebHostEnvironment>();
-    return new ImageService(config, env.IsDevelopment());
+    return new ImageService(config);
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -28,9 +28,7 @@ app.UseCors("MinGramPolicy");
 var isDev = app.Environment.IsDevelopment();
 var devTestRole = builder.Configuration["DEV_TEST_ROLE"];
 
-var imageService = app.Services.GetRequiredService<ImageService>();
-
-app.MapImageEndpoints(imageService, isDev, devTestRole);
+app.MapImageEndpoints(isDev, devTestRole);
 
 app.UseDeveloperExceptionPage();
 app.Run();

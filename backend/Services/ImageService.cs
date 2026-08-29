@@ -10,9 +10,8 @@ namespace backend.Services
     {
         private readonly BlobServiceClient _serviceClient;
         private readonly BlobContainerClient _container;
-        private readonly bool _isDev;
 
-        public ImageService(IConfiguration config, bool isDev)
+        public ImageService(IConfiguration config)
         {
             var accountURL = config["Storage:AccountUrl"]!;
             var containerName = config["Storage:Container"] ?? "bilder";
@@ -22,7 +21,6 @@ namespace backend.Services
                 new DefaultAzureCredential());
 
             _container = _serviceClient.GetBlobContainerClient(containerName);
-            _isDev = isDev;
         }
 
         public async Task<List<Image>> GetAllAsync()

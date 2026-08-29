@@ -7,14 +7,13 @@ public static class ImageEndpoints
 {
     public static void MapImageEndpoints(
         this WebApplication app,
-        ImageService imageService,
         bool isDev,
         string? devTestRole = "")
     {
         var nextImage = 2;
 
         // Alla roller får se bilder
-        app.MapGet("/bilder", async () =>
+        app.MapGet("/bilder", async (ImageService imageService) =>
         {
             if (isDev)
                 return Results.Ok(MockImages.Images);
@@ -33,7 +32,7 @@ public static class ImageEndpoints
         .WithSummary("Hämta alla bilder — alla roller");
 
 
-        app.MapGet("/bilder/{id:int}", async (int id) =>
+        app.MapGet("/bilder/{id:int}", async (int id, ImageService imageService) =>
         {
             if (isDev)
             {
@@ -53,7 +52,7 @@ public static class ImageEndpoints
 
         /* Fotograf och Admin får ladda upp bilder
         Skicka URL:en till bilden — lagra filen i Azure Blob Storage och använd den URL:en här */
-        app.MapPost("/bilder", async (NewImage newImage, HttpRequest req) =>
+        app.MapPost("/bilder", async (NewImage newImage, HttpRequest req, ImageService imageService) =>
         {
             var role = RoleMapping.GetRole(req, isDev, devTestRole ?? "");
 
@@ -79,7 +78,7 @@ public static class ImageEndpoints
 
 
         // Fotograf och Admin får uppdatera caption och taggar
-        app.MapPut("/bilder/{id:int}", async (int id, ImageUpdate imageUpdate, HttpRequest req) =>
+        app.MapPut("/bilder/{id:int}", async (int id, ImageUpdate imageUpdate, HttpRequest req, ImageService imageService) =>
         {
             var role = RoleMapping.GetRole(req, isDev, devTestRole ?? "");
 
@@ -119,7 +118,7 @@ public static class ImageEndpoints
         .WithSummary("Uppdatera bild — kräver Fotograf eller Admin");
 
         /* Bara Admin får ta bort bilder — testa med Postman som Betraktare för att se 403 */
-        app.MapDelete("/bilder/{id:int}", async (int id, HttpRequest req) =>
+        app.MapDelete("/bilder/{id:int}", async (int id, HttpRequest req, ImageService imageService) =>
         {
             if (!RoleMapping.HasPermission(RoleMapping.GetRole(req, isDev, devTestRole ?? ""), "Admin")) return Results.StatusCode(403);
 
