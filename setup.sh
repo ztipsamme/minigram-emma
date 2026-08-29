@@ -217,7 +217,7 @@ SUBNET_ID=$(az network vnet subnet show \
   --vnet-name "$VNET" \
   --name "$SUBNET_ONE" \
   --query id \
-  --output tsv)
+  -o tsv)
 
 az storage account network-rule add \
   --resource-group "$RG" \
@@ -332,6 +332,22 @@ az webapp cors add \
 
 printf '\n8. Easy Auth...\n'
 
+# Entra struktur
+#                  Entra ID
+#                     │
+#         ┌───────────┴───────────┐
+#         │                       │
+#  MinGram API              MinGram Postman
+#         │                       │
+#   App Roles              OAuth client
+#         │                       │
+#  Admin                    user_impersonation
+#  Fotograf                       │
+#  Betraktare                     │
+#         └───────────────┬───────┘
+#                         ↓
+#                   MinGram API
+
 # Install/enable Auth V2 extension if necessary
 az extension add \
   --name authV2 \
@@ -354,7 +370,7 @@ printf '\n'
 # ENTRA_CLIENT_ID=$(az ad app list \
 #   --display-name "$API_NAME" \
 #   --query "[].appId" \
-#   --output tsv)
+#   -o tsv)
 
 # az webapp auth update \
 #   --resource-group "$RG" \
@@ -495,12 +511,12 @@ az rest \
     "appRoleId": "'"$ROLE_ID"'"
   }'
 
-print 'Användarens roller i listform'
+printf 'Användarens roller i listform\n'
 az rest \
   --method GET \
   --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
   --query "value[].{resource:resourceDisplayName,roleId:appRoleId,resourceId:resourceId}" \
-  --output table
+  -o table
 
 
 # ============================================================
@@ -514,7 +530,7 @@ STORAGE_ID=$(az storage account show \
   --resource-group "$RG" \
   --name "$STORAGE" \
   --query id \
-  --output tsv)
+  -o tsv)
 
 printf 'Storage Resource ID:\n%s\n' "$STORAGE_ID"
 
@@ -530,7 +546,7 @@ assign_role() {
   USER_OBJECT_ID=$(az ad user show \
     --id "$USER_UPN" \
     --query id \
-    --output tsv)
+    -o tsv)
 
   printf '  ID   : %s\n' "$USER_OBJECT_ID"
 
@@ -581,6 +597,131 @@ az role assignment list \
   --query "[].{User:principalName,Role:roleDefinitionName,Scope:scope}" \
   -o table
 
+
+# ============================================================
+# Postman
+# ============================================================
+
+printf 'Postman-App Registration'
+
+# Postman App
+#    │
+#    └── Delegated permission
+#        │
+#        └── user_impersonation
+#                │
+#                ▼
+#           MinGram API
+
+POSTMAN_APP_NAME="$PROJECT_NAME-postman-$TEAM"
+POSTMAN_REDIRECT_URI="https://oauth.pstmn.io/v1/browser-callback"
+
+POSTMAN_APP_ID=$(az ad app create \
+  --display-name "$POSTMAN_APP_NAME" \
+  --public-client-redirect-uris "$POSTMAN_REDIRECT_URI" \
+  --query appId \
+  -o tsv)
+
+az ad app show \
+  --id "$POSTMAN_APP_ID" \
+  --query id \
+  -o tsv
+
+API_APP_ID=$(az ad app list \
+  --display-name "$API_NAME" \
+  --query "[0].appId" \
+  -o tsv)
+
+API_APP_OBJECT_ID=$(az ad app list \
+  --display-name "$API_NAME" \
+  --query "[0].id" \
+  -o tsv)
+
+SCOPE="api://$API_APP_ID/user_impersonation"
+
+USER_IMPERSONATION_SCOPE_ID=$(az ad app show \
+  --id "$API_APP_ID" \
+  --query "api.oauth2PermissionScopes[?value=='user_impersonation'].id | [0]" \
+  -o tsv)
+
+# Skapa service principal
+POSTMAN_SP_OBJECT_ID=$(az ad sp create \
+  --id "$POSTMAN_APP_ID" \
+  --query id \
+  -o tsv)
+
+# Permissions för Postman
+az ad app permission add \
+  --id "$POSTMAN_APP_ID" \
+  --api "$API_APP_ID" \
+  --api-permissions "$USER_IMPERSONATION_SCOPE_ID=Scope"
+
+# Verifiera
+az ad app show \
+  --id "$POSTMAN_APP_ID" \
+  --query "requiredResourceAccess" \
+  -o json
+
+# Delegerad consent (Går ej att genomför p.g.a skolans tenant)
+az ad app permission grant \
+  --id "$POSTMAN_APP_ID" \
+  --api "$API_APP_ID" \
+  --scope "user_impersonation"
+
+# Verifiera
+az ad app permission list-grants \
+  --id "$POSTMAN_APP_ID" \
+  -o table
+
+# Sätt som fallback client
+az ad app update \
+  --id "$POSTMAN_APP_ID" \
+  --is-fallback-public-client true
+
+# Postman är public client
+az ad app show \
+  --id "$POSTMAN_APP_ID" \
+  --query "isFallbackPublicClient" \
+  -o tsv
+
+# Postman config
+# Postman → Authorization → OAuth 2.0 → Configure New Token
+
+# Grant Type:
+# Authorization Code with PKCE
+
+# Callback URL:
+# https://oauth.pstmn.io/v1/browser-callback
+
+# Auth URL:
+# https://login.microsoftonline.com/5b679921-53f7-4642-a251-8a603608d21c/oauth2/v2.0/authorize
+
+# Access Token URL:
+# https://login.microsoftonline.com/5b679921-53f7-4642-a251-8a603608d21c/oauth2/v2.0/token
+
+# Client ID:
+# c908bed1-92c5-4263-bc1b-0295be219f33
+
+# Scope:
+# api://331b5459-b32e-4154-b206-f5ee87acbaeb/user_impersonation
+
+# Code Challenge Method:
+# SHA-256
+
+# Client Authentication
+# Send client credentials in body
+
+# Postman
+#    ↓ OAuth 2.0
+# Entra ID
+#    ↓
+# access token
+#    ↓
+# MinGram API
+#    ↓
+# Easy Auth
+#    ↓
+# 200 OK
 
 # ============================================================
 # Sammanfattning
