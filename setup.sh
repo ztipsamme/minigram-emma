@@ -744,3 +744,23 @@ printf 'API            : %s\n' "$API_URL"
 printf 'Frontend       : %s\n' "$FRONTEND_URL"
 
 printf '%s\n' "Klart."
+
+
+
+# ============================================================
+# Managed Identity 
+# ============================================================
+
+
+# Create managed identity
+az webapp identity assign \
+  --resource-group "$RG" \
+  --name "$API_NAME"
+
+  API_PRINCIPAL_ID=$(az webapp identity show \
+  --resource-group "$RG" \
+  --name "$API_NAME" \
+  --query principalId \
+  -o tsv)
+
+echo "$API_PRINCIPAL_ID"
