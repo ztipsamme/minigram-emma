@@ -519,6 +519,9 @@ az rest \
     ]
   }'
 
+read -s -p "Din microsoft email: " USER_EMAIL
+echo $USER_EMAIL
+
 az ad user show \
   --id "$USER_EMAIL" \
   --query userPrincipalName \
@@ -529,6 +532,14 @@ az ad app show \
   --id "$API_APP_ID" \
   --query "appRoles[].value" \
   -o tsv
+
+  az ad app show \
+  --id "$(az ad app list \
+    --display-name "$API_NAME" \
+    --query "[0].appId" \
+    -o tsv)" \
+  --query "appRoles[].{Name:displayName,Value:value,Id:id,Enabled:isEnabled}" \
+  -o table
 
 # printf 'Tilldela roll till user'
 # az rest \
@@ -541,12 +552,12 @@ az ad app show \
 #     "appRoleId": "'"$ROLE_ID"'"
 #   }'
 
-# printf 'Användarens roller i listform\n'
-# az rest \
-#   --method GET \
-#   --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
-#   --query "value[].{resource:resourceDisplayName,roleId:appRoleId,resourceId:resourceId}" \
-#   -o table
+printf 'Användarens roller i listform\n'
+az rest \
+  --method GET \
+  --url "https://graph.microsoft.com/v1.0/users/$USER_OBJECT_ID/appRoleAssignments" \
+  --query "value[].{resource:resourceDisplayName,roleId:appRoleId,resourceId:resourceId}" \
+  -o table
 
 
 # ============================================================

@@ -96,7 +96,8 @@ app.MapPost("/bilder/uppladdning", async (
     [FromForm] string? namn,
     [FromForm] string? taggar) =>
 {
-    if (!HarBehorighet(HamtaRoll(req), "Fotograf")) return Results.StatusCode(403);
+    if (!HarBehorighet(HamtaRoll(req), "Fotograf") || !HarBehorighet(HamtaRoll(req), "Admin")) return Results.StatusCode(403);
+
 
     if (blobContainer is null)
         return Results.Json(new { error = "Blob Storage är inte konfigurerat." }, statusCode: 500);
