@@ -50,64 +50,102 @@ public static class ImageEndpoints
 
         /* Fotograf och Admin får ladda upp bilder
         Skicka URL:en till bilden — lagra filen i Azure Blob Storage och använd den URL:en här */
-        app.MapPost("/bilder", async (NewImage newImage, HttpRequest req, ImageService imageService) =>
+        app.MapPost("/bilder", async (HttpRequest req, ImageService imageService) =>
         {
             var role = RoleMapping.GetRole(req, isDev, devTestRole ?? "");
-
-            if (!RoleMapping.HasPermission(role, "Fotograf") &&
-                !RoleMapping.HasPermission(role, "Admin"))
+ 
+            // HasPermission(role, "Fotograf") är redan sant för Admin.
+            if (!RoleMapping.HasPermission(role, "Fotograf"))
                 return Results.StatusCode(403);
-
+ 
+            if (!req.HasFormContentType)
+                return Results.BadRequest("Förväntar multipart/form-data.");
+ 
+            var form = await req.ReadFormAsync();
+            var file = form.Files["fil"] ?? form.Files.FirstOrDefault();
+ 
+            if (file is null || file.Length == 0)
+                return Results.BadRequest("Ingen fil bifogad.");
+ 
+            var caption = form["caption"].FirstOrDefault() ?? string.Empty;
+            var tags = (form["taggar"].FirstOrDefault() ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(t => t.Trim())
+                .Where(t => t.Length > 0)
+                .ToList();
+ 
             if (isDev)
             {
-                var b = new Image(Guid.NewGuid().ToString(), newImage.Name, newImage.Caption, newImage.Tags ?? [], newImage.Url);
-                MockImages.Images.Add(b);
-                return Results.Created($"/bilder/{b.Id}", b);
+                var mock = new Image(
+                    Guid.NewGuid().ToString(),
+                    file.FileName,
+                    caption,
+                    tags,
+                    "https://placehold.co/400x300?text=MinGram");
+ 
+                MockImages.Images.Add(mock);
+                return Results.Created($"/bilder/{mock.Id}", mock);
             }
-
-            var image = await imageService.CreateImageAsync(
-              newImage
-            );
-
-            return Results.Created($"/bilder/{image.Id}", image);
+ 
+            try
+            {
+                await using var stream = file.OpenReadStream();
+ 
+                var image = await imageService.CreateImageAsync(
+                    file.FileName,
+                    stream,
+                    file.ContentType,
+                    caption,
+                    tags);
+ 
+                return Results.Created($"/bilder/{image.Id}", image);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
         })
+        .DisableAntiforgery()
         .WithName("LaddaUppBild")
         .WithSummary("Lägg till bild — kräver Fotograf eller Admin");
 
 
         // Fotograf och Admin får uppdatera caption och taggar
-        app.MapPut("/bilder/{id}", async (string id, ImageUpdate imageUpdate, HttpRequest req, ImageService imageService) =>
+        app.MapPut("/bilder/{id}", async (
+            string id,
+            ImageUpdate imageUpdate,
+            HttpRequest req,
+            ImageService imageService) =>
         {
             var role = RoleMapping.GetRole(req, isDev, devTestRole ?? "");
-
-            if (!RoleMapping.HasPermission(role, "Fotograf") &&
-                !RoleMapping.HasPermission(role, "Admin"))
+ 
+            if (!RoleMapping.HasPermission(role, "Fotograf"))
                 return Results.StatusCode(403);
-
+ 
             if (isDev)
             {
                 var index = MockImages.Images.FindIndex(b => b.Id == id);
                 if (index < 0) return Results.NotFound();
-
+ 
                 var current = MockImages.Images[index];
-
-                var updatedImage = current with
+ 
+                var updatedMock = current with
                 {
                     Caption = !string.IsNullOrWhiteSpace(imageUpdate.Caption)
                         ? imageUpdate.Caption
                         : current.Caption,
-
+ 
                     Tags = imageUpdate.Tags is { Count: > 0 }
                         ? imageUpdate.Tags
                         : current.Tags
                 };
-
-                MockImages.Images[index] = updatedImage;
-                return Results.Ok(updatedImage);
+ 
+                MockImages.Images[index] = updatedMock;
+                return Results.Ok(updatedMock);
             }
-
+ 
             var image = await imageService.UpdateImageAsync(id, imageUpdate);
-
+ 
             return image is not null
                 ? Results.Ok(image)
                 : Results.NotFound();
@@ -116,20 +154,27 @@ public static class ImageEndpoints
         .WithSummary("Uppdatera bild — kräver Fotograf eller Admin");
 
         /* Bara Admin får ta bort bilder — testa med Postman som Betraktare för att se 403 */
-        app.MapDelete("/bilder/{id}", async (string id, HttpRequest req, ImageService imageService) =>
+        app.MapDelete("/bilder/{id}", async (
+            string id,
+            HttpRequest req,
+            ImageService imageService) =>
         {
-            if (!RoleMapping.HasPermission(RoleMapping.GetRole(req, isDev, devTestRole ?? ""), "Admin")) return Results.StatusCode(403);
-
+            var role = RoleMapping.GetRole(req, isDev, devTestRole ?? "");
+ 
+            if (!RoleMapping.HasPermission(role, "Admin"))
+                return Results.StatusCode(403);
+ 
             if (isDev)
             {
-                var b = MockImages.Images.FirstOrDefault(b => b.Id == id);
-                if (b is null) return Results.NotFound();
-                MockImages.Images.Remove(b);
+                var mock = MockImages.Images.FirstOrDefault(b => b.Id == id);
+                if (mock is null) return Results.NotFound();
+ 
+                MockImages.Images.Remove(mock);
                 return Results.NoContent();
             }
-
+ 
             var deleted = await imageService.DeleteImageByIdAsync(id);
-
+ 
             return deleted
                 ? Results.NoContent()
                 : Results.NotFound();
