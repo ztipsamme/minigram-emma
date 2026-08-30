@@ -32,7 +32,7 @@ namespace backend.Services
                     DateTimeOffset.UtcNow.AddMinutes(-5),
                     DateTimeOffset.UtcNow.AddHours(1));
 
-            await foreach (BlobItem blobItem in _container.GetBlobsAsync(BlobTraits.Metadata))
+            await foreach (BlobItem blobItem in _container.GetBlobsAsync(traits: BlobTraits.Metadata | BlobTraits.Tags))
             {
                 var metadata = blobItem.Metadata;
 
