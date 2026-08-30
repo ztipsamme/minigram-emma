@@ -32,16 +32,17 @@ namespace backend.Services
                     DateTimeOffset.UtcNow.AddMinutes(-5),
                     DateTimeOffset.UtcNow.AddHours(1));
 
-            await foreach (BlobItem blobItem in _container.GetBlobsAsync(traits: BlobTraits.Metadata | BlobTraits.Tags))
+            await foreach (BlobItem blobItem in _container.GetBlobsAsync(BlobTraits.Metadata))
             {
                 var metadata = blobItem.Metadata;
 
                 metadata.TryGetValue("Id", out var id);
                 metadata.TryGetValue("Caption", out var caption);
 
-                var tags = blobItem.Tags != null
-                            ? blobItem.Tags.Values.ToList()
-                            : new List<string>();
+
+                var tags = metadata.TryGetValue("Tags", out var t)
+                    ? t.Split(",", StringSplitOptions.RemoveEmptyEntries).ToList()
+                    : new List<string>();
 
                 var blobClient = _container.GetBlobClient(blobItem.Name);
 
