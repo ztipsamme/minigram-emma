@@ -30,7 +30,7 @@ public static class ImageEndpoints
         .WithSummary("Hämta alla bilder — alla roller");
 
 
-        app.MapGet("/bilder/{id:string}", async (string id, ImageService imageService) =>
+        app.MapGet("/bilder/{id}", async (string id, ImageService imageService) =>
         {
             if (isDev)
             {
@@ -60,7 +60,7 @@ public static class ImageEndpoints
 
             if (isDev)
             {
-                var b = new Image(new Guid().ToString(), newImage.Name, newImage.Caption, newImage.Tags ?? [], newImage.Url);
+                var b = new Image(Guid.NewGuid().ToString(), newImage.Name, newImage.Caption, newImage.Tags ?? [], newImage.Url);
                 MockImages.Images.Add(b);
                 return Results.Created($"/bilder/{b.Id}", b);
             }
@@ -76,7 +76,7 @@ public static class ImageEndpoints
 
 
         // Fotograf och Admin får uppdatera caption och taggar
-        app.MapPut("/bilder/{id:string}", async (string id, ImageUpdate imageUpdate, HttpRequest req, ImageService imageService) =>
+        app.MapPut("/bilder/{id}", async (string id, ImageUpdate imageUpdate, HttpRequest req, ImageService imageService) =>
         {
             var role = RoleMapping.GetRole(req, isDev, devTestRole ?? "");
 
@@ -116,7 +116,7 @@ public static class ImageEndpoints
         .WithSummary("Uppdatera bild — kräver Fotograf eller Admin");
 
         /* Bara Admin får ta bort bilder — testa med Postman som Betraktare för att se 403 */
-        app.MapDelete("/bilder/{id:string}", async (string id, HttpRequest req, ImageService imageService) =>
+        app.MapDelete("/bilder/{id}", async (string id, HttpRequest req, ImageService imageService) =>
         {
             if (!RoleMapping.HasPermission(RoleMapping.GetRole(req, isDev, devTestRole ?? ""), "Admin")) return Results.StatusCode(403);
 
