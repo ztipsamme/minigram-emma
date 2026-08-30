@@ -30,7 +30,7 @@ public static class ImageEndpoints
         .WithSummary("Hämta alla bilder — alla roller");
 
 
-        app.MapGet("/bilder/{id:int}", async (string id, ImageService imageService) =>
+        app.MapGet("/bilder/{id:string}", async (string id, ImageService imageService) =>
         {
             if (isDev)
             {
@@ -116,7 +116,7 @@ public static class ImageEndpoints
         .WithSummary("Uppdatera bild — kräver Fotograf eller Admin");
 
         /* Bara Admin får ta bort bilder — testa med Postman som Betraktare för att se 403 */
-        app.MapDelete("/bilder/{id:int}", async (string id, HttpRequest req, ImageService imageService) =>
+        app.MapDelete("/bilder/{id:string}", async (string id, HttpRequest req, ImageService imageService) =>
         {
             if (!RoleMapping.HasPermission(RoleMapping.GetRole(req, isDev, devTestRole ?? ""), "Admin")) return Results.StatusCode(403);
 
