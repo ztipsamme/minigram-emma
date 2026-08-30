@@ -45,9 +45,8 @@ BETRAKTARE_USER="$PROJECT_NAME-$TEAM-betraktare@$TENANT_DOMAIN"
 
 ADMIN_USERS=(
   # "$ADMIN_USER"
-  "emma.spitz@ithogskolan.onmicrosoft.com"
-  "josef.alhusseini@ithogskolan.onmicrosoft.com"
-  "josef.alhusseini@iths.se"
+  # "admin1@IThogskolan.onmicrosoft.com"
+  # "admin2@IThogskolan.onmicrosoft.com"
 )
 
 FOTOGRAF_USERS=(
@@ -57,7 +56,7 @@ FOTOGRAF_USERS=(
 )
 
 BETRAKTARE_USERS=(
-  # "$BETRAKTARE_USER"
+  # "$BETRAKTARE_USER"  
   # "betraktare1@IThogskolan.onmicrosoft.com"
   # "betraktare2@IThogskolan.onmicrosoft.com"
 )
@@ -743,8 +742,16 @@ az ad app show \
 
 # Postman config
 
+API_APP_ID=$(az ad app list  \
+  --display-name "$API_NAME" \
+  --query "[0].appId" \
+  -o tsv)
 POSTMAN_AUTH_URL="https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/authorize"
 POSTMAN_TOKEN_URL="https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token"
+POSTMAN_APP_ID=$(az ad app list \
+  --display-name "$POSTMAN_APP_NAME" \
+  --query "[0].appId" \
+  -o tsv)
 POSTMAN_SCOPE="api://$API_APP_ID/user_impersonation"
 
 cat <<EOF
@@ -881,3 +888,37 @@ az webapp config appsettings list \
   --output table
 
 az webapp restart --resource-group "$RG" --name "$API_NAME"
+
+
+# ============================================================
+# Byt roll
+# ============================================================
+
+USER_ID=$(az ad signed-in-user show --query id -o tsv)
+
+# Se din nuvarande tilldelning
+az rest --method GET \
+  --url "https://graph.microsoft.com/v1.0/users/$USER_ID/appRoleAssignments" \
+  --query "value[?resourceId=='$SP_ID']"
+
+# Se rollernas id
+az ad app show --id "$API_APP_ID" \
+  --query "appRoles[].{Name:displayName,Value:value,Id:id}" \
+  -o table
+
+# Radera din gamla roll
+ROLE_ID="<rollens-id>"
+
+az rest --method DELETE \
+  --url "https://graph.microsoft.com/v1.0/users/$USER_ID/appRoleAssignments/$ROLE_ID"
+
+# Sätt din nya roll
+DESIRED_ROLE="Betraktare"
+
+NEW_ROLE=$(az ad app show --id "$API_APP_ID" \
+  --query "appRoles[?displayName=='$DESIRED_ROLE'].id" -o tsv)
+
+az rest --method POST \
+  --url "https://graph.microsoft.com/v1.0/users/$USER_ID/appRoleAssignments" \
+  --headers "Content-Type=application/json" \
+  --body "{\"principalId\":\"$USER_ID\",\"resourceId\":\"$SP_ID\",\"appRoleId\":\"$NEW_ROLE\"}"
