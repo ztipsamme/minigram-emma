@@ -38,7 +38,7 @@ public static class ImageEndpoints
                 return b is not null ? Results.Ok(b) : Results.NotFound();
             }
 
-            var image = await imageService.GetByIdAsync(id);
+            ImageDTO? image = await imageService.GetByIdAsync(id);
 
             return image is not null
                 ? Results.Ok(image)
